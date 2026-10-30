@@ -1,7 +1,7 @@
 # momentum
 
 Control a Sennheiser MOMENTUM headset from the command line: noise cancelling,
-transparent hearing, ambient level, bass boost, battery and serial — without the
+transparent hearing, ambient level, bass boost, battery, serial and firmware — without the
 phone app.
 
 It speaks the headset's own private control channel (Qualcomm GAIA over an
@@ -17,7 +17,13 @@ change how the headset behaves:
 
 ```console
 $ momentum status
-noise control: noise cancelling | ambient level 0 | battery 100% | bass boost off | serial 8000800326034155
+noise control: noise cancelling | ambient level 0 | battery 100% | bass boost off
+device: MOMENTUM 5 | firmware 6.21.1 (built 2026-05-20 06:46:42+00:00) | serial 8000800326034155
+
+$ momentum info
+product: MOMENTUM 5
+firmware: 6.21.1 / 2026-05-20 06:46:42+00:00
+serial: 8000800326034155
 
 $ momentum anc off
 anc off -> off
@@ -61,7 +67,8 @@ answers.
 
 | Command | What it does |
 | --- | --- |
-| `status` | Noise-control mode, ambient level, battery, bass boost, serial |
+| `status` | Noise-control mode, ambient level, battery, bass boost, and the device line |
+| `info` | Product name, firmware version with build stamp, serial number |
 | `anc <on\|off>` | Noise cancelling |
 | `transparency <0..=100>` | Transparent-hearing level; `0` turns it off |
 | `bass <on\|off>` | Bass boost |

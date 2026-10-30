@@ -161,27 +161,57 @@ impl<L: Link> Session<L> {
         }
     }
 
+    /// Ask for one of the ASCII labels in Sennheiser's device-info block and
+    /// fold the answer into the state. A refusal is recorded as a warning and
+    /// swallowed: a firmware that does not implement a label is not a reason to
+    /// fail a status read.
+    fn read_label(&mut self, command: u16) -> Result<()> {
+        if let Err(err) =
+            self.request_vendor(VENDOR_SENNHEISER, command, [], DEFAULT_TIMEOUT)
+            && !matches!(err, Error::Refused(_))
+        {
+            return Err(err);
+        }
+        Ok(())
+    }
+
     /// The serial number, which this firmware only reveals in Sennheiser's own
     /// vendor namespace. `None` with a warning if the firmware refuses it.
     ///
     /// [`VENDOR_QUALCOMM`]: crate::VENDOR_QUALCOMM
     pub fn serial(&mut self) -> Result<Option<String>> {
         if self.state.serial.is_none() {
-            let outcome = self.request_vendor(
-                VENDOR_SENNHEISER,
-                cmd::GET_SERIAL_NUMBER,
-                [],
-                DEFAULT_TIMEOUT,
-            );
-            if let Err(err) = outcome {
-                // Already recorded as a warning; a missing serial is not a
-                // reason to fail a status read.
-                if !matches!(err, Error::Refused(_)) {
-                    return Err(err);
-                }
-            }
+            self.read_label(cmd::GET_SERIAL_NUMBER)?;
         }
         Ok(self.state.serial.clone())
+    }
+
+    /// The product name as the headset spells it, e.g. `MOMENTUM 5`. (live)
+    pub fn product(&mut self) -> Result<Option<String>> {
+        if self.state.product.is_none() {
+            self.read_label(cmd::GET_PRODUCT_NAME)?;
+        }
+        Ok(self.state.product.clone())
+    }
+
+    /// Firmware version and build stamp, e.g.
+    /// `6.21.1 / 2026-05-20 06:46:42+00:00`. This is the version the Sennheiser
+    /// app shows; it is a control-channel read, not an OS query. (live)
+    pub fn firmware(&mut self) -> Result<Option<String>> {
+        if self.state.firmware.is_none() {
+            self.read_label(cmd::GET_FIRMWARE_VERSION)?;
+        }
+        Ok(self.state.firmware.clone())
+    }
+
+    /// Product, firmware and serial as one line, reading whatever is still
+    /// missing. Three frames, sent one after another: refusing one does not stop
+    /// the others from answering.
+    pub fn identity(&mut self) -> Result<Option<String>> {
+        self.product()?;
+        self.firmware()?;
+        self.serial()?;
+        Ok(self.state.identity())
     }
 
     /// Write a value, then read it back so callers see confirmed state.

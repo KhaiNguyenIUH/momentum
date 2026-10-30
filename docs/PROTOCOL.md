@@ -128,13 +128,31 @@ So the serial number is only obtainable in Sennheiser's namespace, which is why
 `Session::request_vendor` exists and `Session::serial()` uses it. Expect other
 vendor-specific commands to behave the same way.
 
+It is not a one-off: `0x0001`–`0x0006` turn out to be a **device-info block that
+answers only under `0x001D`**. The same six ids under `0x0495` each refuse with
+`0x018x [01]`, unexpected code.
+
+| Id | Reply under `0x001D` | Payload, read live from `80:C3:BA:C5:BB:97` |
+| --- | --- | --- |
+| `0x0001` | `0x0101` | `00 0d 01 0c 01 06 02 04 02 07 01 00 05` — a feature list; layout not decoded, so nothing in the code reads it |
+| `0x0002` | `0x0102` | `[00]`, meaning unknown |
+| `0x0003` | `0x0103` | `8000800326034155` — serial number |
+| `0x0004` | `0x0104` | `MOMENTUM 5` — product name |
+| `0x0005` | `0x0105` | `6.21.1 / 2026-05-20 06:46:42+00:00` — firmware version and build stamp |
+| `0x0006` | `0x0106` | empty |
+
+For contrast, `0x0001` under `0x0495` answers with 27 bytes instead of 13, so the
+two namespaces do not merely differ in which ids exist — they answer the same id
+with different content. Try `0x001D` before concluding an id is dead.
+
 ## Commands
 
 | Id | Reply | Push | Meaning | Level |
 | --- | --- | --- | --- | --- |
 | `0x0007` | `0x0107` | | Register feature, payload = feature id. The ack means the session is live. | **live** |
 | `0x0003` | `0x0103` | | Serial number, ASCII digits, **vendor `0x001D` only**. | **live** |
-| `0x0004` | `0x0104` | | Hardware info, GAIA basic set. | probe |
+| `0x0004` | `0x0104` | | Product name, ASCII, **vendor `0x001D` only**. | **live** |
+| `0x0005` | `0x0105` | | Firmware version and build stamp, ASCII, **vendor `0x001D` only**. | **live** |
 | `0x0602` | `0x0702` | `0x0682` | Charging / in-case state. | **live** as a push |
 | `0x0603` | `0x0703` | `0x0683` | Battery, one byte per unit, `0xFF` = not reported. | **live** |
 | `0x1A04` | `0x1B04` | | Set ANC, `01`/`00`. | **live** |
@@ -238,8 +256,9 @@ Two findings from the same measurement, both of which cost time:
 - **User EQ.** Feature `0x08` and the MOMENTUM 4 tool agree on the ids; the MOMENTUM 5
   payload layout is unmeasured, and a wrong-length payload is the surest way to
   get `0x02` back.
-- **Firmware version.** `0x0004` is a probe; the serial number works, the version
-  does not yet.
+- **What `0x0001` and `0x0002` mean in the Sennheiser namespace.** Both answer, and
+  the 13-byte `0x0101` looks like a feature/version list. Decoding it is a
+  reading problem, not a missing command.
 - **Linux.** Same protocol over any RFCOMM socket: implement `Link` with
   `bluer`'s SDP lookup and `connect(2)` on `BTPROTO_RFCOMM`, and everything above
   `src/link.rs` is already portable.

@@ -124,9 +124,26 @@ pub const PUSH_TRANSPARENCY_ON: u16 = 0x1885;
 pub const GET_SERIAL_NUMBER: u16 = 0x0003;
 /// Reply id of [`GET_SERIAL_NUMBER`] under the Sennheiser vendor namespace.
 pub const SERIAL_NUMBER_REPLY: u16 = 0x0103;
-/// Candidate hardware info query, following the Qualcomm GAIA basic command
-/// set. Unconfirmed on Sennheiser firmware: treat as a probe.
-pub const PROBE_HARDWARE_INFO: u16 = 0x0004;
+
+/// Read the product name as ASCII — `"MOMENTUM 5"` on this unit.
+///
+/// Same Sennheiser-only namespace as [`GET_SERIAL_NUMBER`]: under `0x0495` this
+/// id answers `0x0184 [01]` (unexpected code), under `0x001D` it answers
+/// `0x0104`. Live on MOMENTUM 5.
+pub const GET_PRODUCT_NAME: u16 = 0x0004;
+/// Reply id of [`GET_PRODUCT_NAME`] under the Sennheiser vendor namespace.
+pub const PRODUCT_NAME_REPLY: u16 = 0x0104;
+
+/// Read the firmware version and build stamp as one ASCII string, separated by
+/// `" / "`: `"6.21.1 / 2026-05-20 06:46:42+00:00"`.
+///
+/// This is the version the Sennheiser app shows, and the reason it lives here
+/// rather than in a Windows-specific module: it is nine bytes out and forty-two
+/// back on the ordinary control channel. Live on MOMENTUM 5, Sennheiser
+/// namespace only.
+pub const GET_FIRMWARE_VERSION: u16 = 0x0005;
+/// Reply id of [`GET_FIRMWARE_VERSION`] under the Sennheiser vendor namespace.
+pub const FIRMWARE_VERSION_REPLY: u16 = 0x0105;
 
 /// Human-readable name for a raw command id, used by `momentum watch` and
 /// `momentum raw` so a capture is readable while scrolling.
@@ -158,7 +175,10 @@ pub fn name(cmd: u16) -> &'static str {
         0x1109 => "bass_boost_reply",
         GET_SERIAL_NUMBER => "get_serial_number",
         SERIAL_NUMBER_REPLY => "serial_reply",
-        PROBE_HARDWARE_INFO => "probe_hardware_info",
+        GET_PRODUCT_NAME => "get_product_name",
+        PRODUCT_NAME_REPLY => "product_reply",
+        GET_FIRMWARE_VERSION => "get_firmware_version",
+        FIRMWARE_VERSION_REPLY => "firmware_reply",
         0x0482 => "unit_state_push",
         0x0880 => "stability_push",
         0x1A81 => "mode_list_push",

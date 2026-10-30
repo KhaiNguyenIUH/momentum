@@ -79,6 +79,15 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
+    /// Print what identifies this unit: product name, firmware version with its
+    /// build stamp, and serial number. All three are read over the control
+    /// channel, in Sennheiser's own vendor namespace, so they are the headset's
+    /// own answer and not something Windows remembers.
+    Info {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Print every state push the headset sends, for as long as you watch.
     Watch {
         /// Seconds to keep the channel open.
@@ -203,6 +212,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
     match command {
         Command::RfScan { filter, uuid } => Some(rf_scan(filter, uuid.as_deref())),
         Command::Status { filter } => Some(status(filter)),
+        Command::Info { filter } => Some(info(filter)),
         Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -320,10 +330,35 @@ fn connect_first(
 fn status(filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     session.refresh()?;
-    // Not a failure if this firmware keeps the serial to itself; refresh and
-    // serial() both record why.
-    session.serial().ok();
+    // Not a failure if this firmware keeps its labels to itself; the session
+    // records the reason in `warnings` below.
+    let identity = session.identity().ok().flatten();
     println!("{}", session.state.summary());
+    if let Some(identity) = identity {
+        println!("device: {identity}");
+    }
+    for warning in &session.warnings {
+        println!("note: {warning}");
+    }
+    Ok(())
+}
+
+/// Product, firmware and serial, one per line.
+#[cfg(windows)]
+fn info(filter: &str) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    // No `refresh()`: these three frames are the whole job, so a script that
+    // polls `info` does not also pay for a battery and mode read each time.
+    for (label, value) in [
+        ("product", session.product()?),
+        ("firmware", session.firmware()?),
+        ("serial", session.serial()?),
+    ] {
+        match value {
+            Some(text) => println!("{label}: {text}"),
+            None => println!("{label}: not reported"),
+        }
+    }
     for warning in &session.warnings {
         println!("note: {warning}");
     }
@@ -362,10 +397,11 @@ fn watch(seconds: u64, filter: &str, raw: bool) -> Result<(), Boxed> {
 
     let mut session = open_session(filter)?;
     session.refresh()?;
-    // Not a failure if this firmware keeps the serial to itself; refresh and
-    // serial() both record why.
-    session.serial().ok();
+    let identity = session.identity().ok().flatten();
     println!("{}", session.state.summary());
+    if let Some(identity) = identity {
+        println!("device: {identity}");
+    }
     println!("watching for {seconds}s: switch modes on the headset or in the Sennheiser app");
     let deadline = Instant::now() + Duration::from_secs(seconds);
     while Instant::now() < deadline {

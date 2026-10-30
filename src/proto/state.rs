@@ -77,6 +77,11 @@ pub enum Event {
     /// The serial number, ASCII digits, as reported under the Sennheiser vendor
     /// namespace. (live on MOMENTUM 5)
     Serial(String),
+    /// The product name, e.g. `MOMENTUM 5`. Same namespace. (live)
+    Product(String),
+    /// Firmware version and build stamp, e.g.
+    /// `6.21.1 / 2026-05-20 06:46:42+00:00`. Same namespace. (live)
+    Firmware(String),
     /// Anything not yet understood. Kept verbatim so captures can be studied.
     Unknown {
         cmd: u16,
@@ -121,15 +126,24 @@ impl Event {
             {
                 Event::BassBoost(flag(&frame.payload))
             }
-            c if c == cmd::SERIAL_NUMBER_REPLY => match ascii_text(&frame.payload) {
-                Some(text) => Event::Serial(text),
-                // A short numeric payload under this id is a flag, not an
-                // identifier, so keep it verbatim rather than inventing a serial.
-                None => Event::Unknown {
-                    cmd: frame.cmd,
-                    payload: frame.payload.clone(),
-                },
-            },
+            c if c == cmd::SERIAL_NUMBER_REPLY
+                || c == cmd::PRODUCT_NAME_REPLY
+                || c == cmd::FIRMWARE_VERSION_REPLY =>
+            {
+                match ascii_text(&frame.payload) {
+                    Some(text) => match c {
+                        cmd::PRODUCT_NAME_REPLY => Event::Product(text),
+                        cmd::FIRMWARE_VERSION_REPLY => Event::Firmware(text),
+                        _ => Event::Serial(text),
+                    },
+                    // A short numeric payload under these ids is a flag, not a
+                    // label, so keep it verbatim rather than inventing one.
+                    None => Event::Unknown {
+                        cmd: frame.cmd,
+                        payload: frame.payload.clone(),
+                    },
+                }
+            }
             _ => Event::Unknown {
                 cmd: frame.cmd,
                 payload: frame.payload.clone(),
@@ -141,6 +155,8 @@ impl Event {
     pub fn describe(&self) -> String {
         match self {
             Event::Serial(text) => format!("serial {text}"),
+            Event::Product(text) => format!("product {text}"),
+            Event::Firmware(text) => format!("firmware {text}"),
             Event::Battery(b) => format!("battery {}", describe_slots(&b.slots)),
             Event::Charging(c) => format!(
                 "charging {}",
@@ -177,15 +193,29 @@ pub struct DeviceState {
     pub bass_boost: Option<bool>,
     /// Read on demand; see [`crate::proto::cmd::GET_SERIAL_NUMBER`].
     pub serial: Option<String>,
+    /// Product name, e.g. `MOMENTUM 5`. Read on demand.
+    pub product: Option<String>,
+    /// Firmware version and build stamp. Read on demand.
+    pub firmware: Option<String>,
 }
 
-/// A payload long enough and printable enough to be an identifier rather than a
-/// flag byte: the serial number arrives as ASCII digits.
+/// A payload that reads as a label rather than a flag. The serial number, the
+/// product name (`MOMENTUM 5`) and the firmware string
+/// (`6.21.1 / 2026-05-20 06:46:42+00:00`) all arrive as plain ASCII.
+///
+/// Spaces are allowed because two of the three contain one, so the guard that
+/// keeps a padded flag byte from becoming text is the length and the requirement
+/// for at least one alphanumeric character.
 fn ascii_text(payload: &[u8]) -> Option<String> {
-    if payload.len() < 4 || !payload.iter().all(u8::is_ascii_graphic) {
+    if payload.len() < 3 || !payload.iter().all(|&b| b.is_ascii_graphic() || b == b' ') {
         return None;
     }
-    Some(payload.iter().map(|&b| b as char).collect())
+    if !payload.iter().any(u8::is_ascii_alphanumeric) {
+        return None;
+    }
+    let text: String = payload.iter().map(|&b| b as char).collect();
+    let text = text.trim_end();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 impl DeviceState {
@@ -205,6 +235,8 @@ impl DeviceState {
             Event::BassBoost(on) => self.bass_boost = Some(*on),
             Event::FeatureRegistered(_) | Event::Unknown { .. } => {}
             Event::Serial(text) => self.serial = Some(text.clone()),
+            Event::Product(text) => self.product = Some(text.clone()),
+            Event::Firmware(text) => self.firmware = Some(text.clone()),
         }
     }
 
@@ -216,6 +248,32 @@ impl DeviceState {
             (Some(false), Some(false)) => Mode::Off,
             _ => Mode::Unknown,
         }
+    }
+
+    /// What identifies this particular unit, on its own line: product, firmware
+    /// with its build stamp, and serial. `None` until at least one has been read.
+    ///
+    /// Kept apart from [`DeviceState::summary`] because these are fixed labels,
+    /// not state — printing them on every push would be noise.
+    pub fn identity(&self) -> Option<String> {
+        let mut parts = Vec::new();
+        if let Some(product) = &self.product {
+            parts.push(product.clone());
+        }
+        if let Some(firmware) = &self.firmware {
+            // `6.21.1 / 2026-05-20 06:46:42+00:00`: the version is what people
+            // quote, the stamp is what tells two builds of it apart.
+            let (version, built) = firmware.split_once(" / ").unwrap_or((firmware, ""));
+            if built.is_empty() {
+                parts.push(format!("firmware {version}"));
+            } else {
+                parts.push(format!("firmware {version} (built {built})"));
+            }
+        }
+        if let Some(serial) = &self.serial {
+            parts.push(format!("serial {serial}"));
+        }
+        (!parts.is_empty()).then(|| parts.join(" | "))
     }
 
     /// One-line status for `momentum status`.
@@ -232,9 +290,6 @@ impl DeviceState {
         }
         if let Some(bass) = self.bass_boost {
             parts.push(format!("bass boost {}", on_off(bass)));
-        }
-        if let Some(serial) = &self.serial {
-            parts.push(format!("serial {serial}"));
         }
         parts.join(" | ")
     }
@@ -435,6 +490,54 @@ mod tests {
             matches!(event, Event::Unknown { .. }),
             "a flag byte must not become an identifier"
         );
+    }
+
+    /// Live capture: `0x0004` under vendor `0x001D` answers `0x0104` with the
+    /// product name, and `0x0005` answers `0x0105` with version and build stamp.
+    /// Both contain a space, which the serial number does not.
+    #[test]
+    fn decodes_product_and_firmware_replies() {
+        let product = Event::decode(&frame(cmd::PRODUCT_NAME_REPLY, b"MOMENTUM 5"));
+        assert_eq!(product, Event::Product("MOMENTUM 5".into()));
+
+        let firmware = Event::decode(&frame(
+            cmd::FIRMWARE_VERSION_REPLY,
+            b"6.21.1 / 2026-05-20 06:46:42+00:00",
+        ));
+        assert_eq!(
+            firmware,
+            Event::Firmware("6.21.1 / 2026-05-20 06:46:42+00:00".into())
+        );
+
+        let mut state = DeviceState::default();
+        state.apply(&product);
+        state.apply(&firmware);
+        state.serial = Some("8000800326034155".into());
+        assert_eq!(
+            state.identity().as_deref(),
+            Some(
+                "MOMENTUM 5 | firmware 6.21.1 (built 2026-05-20 06:46:42+00:00) \
+                 | serial 8000800326034155"
+            ),
+            "identity is the line under the status line, not part of it"
+        );
+        assert!(
+            !state.summary().contains("6.21.1"),
+            "fixed labels must not crowd out the state in the summary"
+        );
+    }
+
+    #[test]
+    fn a_padding_of_spaces_is_not_a_label() {
+        // Three printable bytes with no alphanumeric is still not text worth
+        // reporting: `0x0106` answers empty and other ids answer with padding.
+        for payload in [&b"   "[..], &b"--"[..], &[0x01, 0x02][..]] {
+            let event = Event::decode(&frame(cmd::PRODUCT_NAME_REPLY, payload));
+            assert!(
+                matches!(event, Event::Unknown { .. }),
+                "{payload:?} must stay an unknown frame"
+            );
+        }
     }
 
     #[test]
