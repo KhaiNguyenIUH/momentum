@@ -332,15 +332,35 @@ value is not the slider's limit either. Preset curves seen (bands 0–7, raw):
 ```
 
 **The scale is now measured: ten raw units per decibel.** Setting every band to
-−6 dB in Smart Control and reading the table gave **−60 on all eight**, and flat
-reads 0. That reinterprets the earlier capture correctly: the preset extremes of
-−35 and +30 were **−3.5 dB and +3.0 dB**, and the single-unit steps during a drag
-were 0.1 dB. The `14` reported by `0x100f` is confirmed *not* to be the slider
-range, since −6 dB (= −60) sits comfortably outside it.
+−6 dB in Smart Control and reading the table gave **−60 on all eight**; +2 dB gave
+**+20**. Flat is 0, so the sign is plain two's complement with no 128-style offset
+and the scale holds in both directions. That reinterprets the earlier capture
+correctly: the preset extremes of −35 and +30 were **−3.5 dB and +3.0 dB**, and the
+single-unit steps during a drag were 0.1 dB. The `14` reported by `0x100f` is
+confirmed *not* to be the slider range, since −60 sits comfortably outside it.
 
-What remains unknown is the **write command**, not the unit: `0x1002` refused both
-the eight-byte and the `(band, gain)` shape, so the byte store's write path is
-still the app's own.
+Neither the `0x100d` table (still `2048` / `2908`) nor the `0x1013` state (still
+`[00, 00]`) moved at −6 dB or at +2 dB, so neither is the applied-gain table or a
+level-compensation field. Both remain unnamed.
+
+### Loudness does not track the curve
+
+Reported while measuring: **−6 dB across all eight bands and +2 dB across all eight
+bands sounded equally loud.** Eight decibels of difference in the stored curve with
+no difference in perceived level means something normalises the output — a pre-amp
+trim, or a feature like adaptive hearing deciding for itself.
+
+That is a listener's observation rather than a wire measurement, but it constrains
+how everything below may be read. Any argument of the form *"nothing was audible,
+therefore the field does nothing"* is weaker than it looks while level is being
+adjusted underneath. So the u16 gain table in the next section is recorded as
+**not proven audible** — which is what was measured — rather than *inert*, which is
+what was assumed. A single band carved 12 dB while its neighbours stay flat is the
+test that survives normalisation, and it has not been done.
+
+What remains unknown about the byte store is the **write command**, not the unit:
+`0x1002` refused both the eight-byte table and the `(band, gain)` pair, so writing
+it is still the app's own affair.
 
 **One correction to note.** Eight-byte pushes prove the *notification* carries a
 whole table, and the band-by-band progression implies eight separate writes, but

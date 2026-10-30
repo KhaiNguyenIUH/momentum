@@ -144,13 +144,14 @@ pub const GET_EQ_LIMIT: u16 = 0x100f;
 /// The user gain of one band as a u16, where the eight-byte form of
 /// [`GET_EQ_GAINS`] reports the same thing in one frame.
 ///
-/// **Writing this changes nothing you can hear, but it is not inert.** Its even
-/// neighbour `0x1010` is range-checked — a MOMENTUM 5 accepted `-180` on a band and
-/// refused `-182` with error `0x82` — stores what it accepts, and echoed it back.
-/// None of it was audible, at 90 Hz or at 2.5 kHz, and the app's own slider moves
-/// never touch this table at all. The likeliest explanation is that the equaliser
-/// is switched off by some other field, [`GET_EQ_STATE`] being the candidate. Not
-/// measured, so nothing in this crate writes it.
+/// **Nothing written here has been heard to change anything, but it is not proven
+/// inert either.** Its even neighbour `0x1010` is range-checked — a MOMENTUM 5
+/// accepted `-180` on a band and refused `-182` with error `0x82` — stores what it
+/// accepts, and echoes it back. None of it was audible, at 90 Hz or at 2.5 kHz, and
+/// the app's own slider moves never touch this table. Two readings survive: the
+/// equaliser is switched off elsewhere, or the headset normalises level underneath
+/// and small single-band changes were masked. Not settled, so nothing here writes
+/// it.
 pub const GET_EQ_GAIN_WIDE: u16 = 0x1011;
 /// A two-byte row whose meaning is unknown. Read live, kept raw.
 pub const GET_EQ_STATE: u16 = 0x1013;
