@@ -249,7 +249,7 @@ pub fn name(cmd: u16) -> &'static str {
         PUSH_EQ_GAIN_WIDE => "eq_gain_wide_push",
         GET_EQ_STATE => "get_eq_state",
         PUSH_EQ_STATE => "eq_state_push",
-        0x1102 => "eq_gain_ack",
+        0x1102 => "eq_gain_band_reply",
         0x110b => "eq_frequency_reply",
         0x110d => "eq_band_value_reply",
         0x110f => "eq_limit_reply",

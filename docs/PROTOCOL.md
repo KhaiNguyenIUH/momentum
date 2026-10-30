@@ -424,8 +424,36 @@ crate **reads both tables and writes neither**, and a headset behaving oddly for
 reason spread across six sessions of probing is worse than a tool that says *not
 implemented*.
 
-## Still unknown
+### Writing the live table: what has been ruled out
 
+The byte store reflects every slider move ever made, and refuses every write this
+host has attempted. What has been excluded, rather than assumed:
+
+- **Not a collision with the phone.** The same attempts were made with the phone's
+  Bluetooth switched off, and every refusal was byte-identical. The theory that the
+  headset ignored writes while the app sat on the EQ screen is dead.
+- **Not the payload shape alone.** `0x1002` was tried with one byte, with a
+  `(band, gain)` pair and with a whole eight-byte table; `0x100a` and `0x100c` — the
+  even neighbours the read ids point at — took the `(band, gain)` pair. All answered
+  `05`, not supported.
+
+Two things came out of the sweep instead. `0x1002` with a single byte answers with a
+value that has always matched that band's stored gain, so it reads like a per-band
+read rather than the write its even number suggests — the even/odd rule has now
+broken here twice. And **`0x1014` answers `[00, 3c]` to everything it is given**:
+`0x3c` is 60, which is **+6.0 dB under the calibration**, and 6 dB is the range the
+app's sliders have. That is the most likely reading — a gain ceiling — but it is a
+hypothesis about a fixed answer, not a decoded field. `0x1016` refuses with `01`
+where the others refuse with `05`, which says the id is known and only the code is
+wrong; that is a thread worth pulling later.
+
+The command the phone writes with has still never been seen by any host but the
+phone. Watching cannot help further: a second connection is notified about *state*,
+it does not mirror another connection's *commands*. The remaining instruments are a
+controller-side snoop log, or the second GAIA service that `rf-scan` shows on
+RFCOMM channel 1, which nothing has ever connected to.
+
+## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
 - **User EQ command shape.** See *The equaliser* — the ids, the band table and the
