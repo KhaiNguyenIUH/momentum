@@ -38,7 +38,7 @@ pub use error::Error;
 pub use link::{Link, MockLink};
 pub use proto::cmd;
 pub use proto::frame::{Frame, FrameKind, Framer, VENDOR_QUALCOMM, VENDOR_SENNHEISER};
-pub use proto::state::{Battery, DeviceState, Event};
+pub use proto::state::{Battery, DeviceState, Equaliser, Event};
 pub use session::{DEFAULT_FEATURES, DEFAULT_TIMEOUT, Session};
 
 /// SDP service class id of the GAIA control channel.

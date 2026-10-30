@@ -69,8 +69,9 @@ pub mod feature {
     pub const BATTERY: u8 = 0x03;
     /// Per-unit state transitions, e.g. in-case / out-of-case. (confirmed)
     pub const UNIT_STATE: u8 = 0x04;
-    /// User equaliser. (probable, MOMENTUM 4)
-    pub const USER_EQ: u8 = 0x08;
+    /// User equaliser. **live on MOMENTUM 5**: registering it answers the ack
+    /// and then pushes the whole band configuration.
+    pub const EQ: u8 = 0x08;
     /// Transparency / ambient sound. (confirmed)
     pub const TRANSPARENCY: u8 = 0x0C;
     /// Active noise control. (confirmed)
@@ -115,6 +116,49 @@ pub const GET_BASS_BOOST: u16 = 0x1009;
 pub const PUSH_TRANSPARENCY_LEVEL: u16 = 0x1A83;
 /// Push carrying the transparency on/off flag. (confirmed)
 pub const PUSH_TRANSPARENCY_ON: u16 = 0x1885;
+
+/// The equaliser, in its own command range. Read live from a MOMENTUM 5.
+///
+/// Two things about this block are unlike the rest of the protocol and cost
+/// measurement to learn. First, the base ids **refuse a bare read** with `05`:
+/// they take a band index, and the complete tables arrive unprompted when
+/// [`REGISTER_FEATURE`] is sent with [`feature::EQ`]. Second, the even/odd rule
+/// seen elsewhere holds — the even id writes, the odd one reads — which is how
+/// `0x1010` was found to accept a gain, answering an empty ack and then pushing
+/// the table again.
+///
+/// The gains are one signed byte per band with flat reported as zero, but the
+/// **scale is unmeasured**: no write other than the value already in effect has
+/// been sent, so this crate does not translate bytes into decibels.
+pub const GET_EQ_GAINS: u16 = 0x1003;
+/// Centre frequency of one band, in Hz, big-endian u16. The eight bands of a
+/// MOMENTUM 5 are 90, 325, 1500, 2500, 4500, 8000, 13000 and 16000 Hz.
+pub const GET_EQ_FREQUENCY: u16 = 0x100b;
+/// A per-band u16 whose unit is unidentified — `0x0800` on band 0 and `0x0b5c`
+/// on the others here. Named for its id because naming it anything else would
+/// be a guess.
+pub const GET_EQ_BAND_VALUE: u16 = 0x100d;
+/// Per-band limit, `14` on every band of this unit, unit unknown. Read-only:
+/// the even neighbour `0x100e` refuses the write.
+pub const GET_EQ_LIMIT: u16 = 0x100f;
+/// The user gain of one band as a u16, where the eight-byte form of
+/// [`GET_EQ_GAINS`] reports the same thing in one frame.
+pub const GET_EQ_GAIN_WIDE: u16 = 0x1011;
+/// A two-byte row whose meaning is unknown. Read live, kept raw.
+pub const GET_EQ_STATE: u16 = 0x1013;
+
+/// Pushes of each table above, sent together when [`feature::EQ`] is registered.
+pub const PUSH_EQ_GAINS: u16 = 0x1082;
+/// See [`PUSH_EQ_GAINS`].
+pub const PUSH_EQ_FREQUENCY: u16 = 0x108b;
+/// See [`PUSH_EQ_GAINS`].
+pub const PUSH_EQ_BAND_VALUE: u16 = 0x108d;
+/// See [`PUSH_EQ_GAINS`].
+pub const PUSH_EQ_LIMIT: u16 = 0x108f;
+/// See [`PUSH_EQ_GAINS`].
+pub const PUSH_EQ_GAIN_WIDE: u16 = 0x1091;
+/// See [`PUSH_EQ_GAINS`].
+pub const PUSH_EQ_STATE: u16 = 0x1093;
 
 /// Read the serial number. The payload of the reply is ASCII digits.
 ///
@@ -179,6 +223,24 @@ pub fn name(cmd: u16) -> &'static str {
         PRODUCT_NAME_REPLY => "product_reply",
         GET_FIRMWARE_VERSION => "get_firmware_version",
         FIRMWARE_VERSION_REPLY => "firmware_reply",
+        GET_EQ_GAINS => "get_eq_gains",
+        PUSH_EQ_GAINS => "eq_gains_push",
+        GET_EQ_FREQUENCY => "get_eq_frequency",
+        PUSH_EQ_FREQUENCY => "eq_frequency_push",
+        GET_EQ_BAND_VALUE => "get_eq_band_value",
+        PUSH_EQ_BAND_VALUE => "eq_band_value_push",
+        GET_EQ_LIMIT => "get_eq_limit",
+        PUSH_EQ_LIMIT => "eq_limit_push",
+        GET_EQ_GAIN_WIDE => "get_eq_gain_wide",
+        PUSH_EQ_GAIN_WIDE => "eq_gain_wide_push",
+        GET_EQ_STATE => "get_eq_state",
+        PUSH_EQ_STATE => "eq_state_push",
+        0x1102 => "eq_gain_ack",
+        0x110b => "eq_frequency_reply",
+        0x110d => "eq_band_value_reply",
+        0x110f => "eq_limit_reply",
+        0x1111 => "eq_gain_wide_reply",
+        0x1113 => "eq_state_reply",
         0x0482 => "unit_state_push",
         0x0880 => "stability_push",
         0x1A81 => "mode_list_push",

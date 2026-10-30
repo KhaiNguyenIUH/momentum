@@ -62,6 +62,76 @@ impl Charging {
     }
 }
 
+/// The equaliser tables, as the headset reports them.
+///
+/// Every field is raw on purpose except [`Equaliser::frequencies`], which is in
+/// hertz because the eight values it yields — 90 to 16000 — are unambiguous.
+/// The gain fields are *stored values*, not decibels: the scale has never been
+/// measured, and inventing one would let a caller write a number that means
+/// something else than it says.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Equaliser {
+    /// One signed byte per band, the compact form. All zero means flat.
+    pub gains: Vec<i8>,
+    /// Centre frequency per band, hertz. The only field with a known unit.
+    pub frequencies: Vec<Option<u16>>,
+    /// Per-band u16 from `0x100d`, unit unidentified.
+    pub band_values: Vec<Option<u16>>,
+    /// Per-band limit from `0x100f`; `14` everywhere on a MOMENTUM 5.
+    pub limits: Vec<Option<u16>>,
+    /// Per-band gain in the wide form, `0x1011`.
+    pub gains_wide: Vec<Option<u16>>,
+    /// The two-byte row of `0x1013`, kept verbatim.
+    pub state: Vec<u8>,
+}
+
+impl Equaliser {
+    /// How many bands the headset has described so far.
+    pub fn bands(&self) -> usize {
+        [
+            self.gains.len(),
+            self.frequencies.len(),
+            self.band_values.len(),
+            self.limits.len(),
+            self.gains_wide.len(),
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0)
+    }
+
+    /// True when no table has arrived, which is how a caller tells "flat" from
+    /// "never asked".
+    pub fn is_empty(&self) -> bool {
+        self.bands() == 0 && self.state.is_empty()
+    }
+}
+
+/// Parse indexed rows: a band number followed by `width` big-endian bytes.
+///
+/// Rows land at the index the headset names rather than in arrival order, so a
+/// firmware that reports three of eight bands leaves the other five as `None`
+/// instead of shifting everything left.
+fn rows(payload: &[u8], width: usize) -> Vec<Option<u16>> {
+    let stride = width + 1;
+    let mut out = Vec::new();
+    for row in payload.chunks(stride) {
+        if row.len() < stride {
+            break; // a partial row describes no band
+        }
+        let band = usize::from(row[0]);
+        let mut value: u16 = 0;
+        for &byte in &row[1..] {
+            value = (value << 8) | u16::from(byte);
+        }
+        if out.len() <= band {
+            out.resize(band + 1, None);
+        }
+        out[band] = Some(value);
+    }
+    out
+}
+
 /// A state change reported by the headset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -82,6 +152,20 @@ pub enum Event {
     /// Firmware version and build stamp, e.g.
     /// `6.21.1 / 2026-05-20 06:46:42+00:00`. Same namespace. (live)
     Firmware(String),
+    /// One of the equaliser tables, pushed when feature `0x08` is registered or
+    /// read back per band. The variant names the table because the ids do not
+    /// share a payload shape. (live)
+    EqGains(Vec<i8>),
+    /// See [`Event::EqGains`]. Values are hertz.
+    EqFrequencies(Vec<Option<u16>>),
+    /// See [`Event::EqGains`]. Unit unidentified.
+    EqBandValues(Vec<Option<u16>>),
+    /// See [`Event::EqGains`].
+    EqLimits(Vec<Option<u16>>),
+    /// See [`Event::EqGains`].
+    EqGainsWide(Vec<Option<u16>>),
+    /// See [`Event::EqGains`]. Kept raw.
+    EqState(Vec<u8>),
     /// Anything not yet understood. Kept verbatim so captures can be studied.
     Unknown {
         cmd: u16,
@@ -144,6 +228,32 @@ impl Event {
                     },
                 }
             }
+            // Equaliser: each table answers under its own reply id *and* arrives
+            // as a push, and the two carry the same bytes.
+            c if c == cmd::PUSH_EQ_GAINS || c == cmd::reply_to(cmd::GET_EQ_GAINS) => {
+                Event::EqGains(frame.payload.iter().map(|&b| b as i8).collect())
+            }
+            c if c == cmd::PUSH_EQ_FREQUENCY
+                || c == cmd::reply_to(cmd::GET_EQ_FREQUENCY) =>
+            {
+                Event::EqFrequencies(rows(&frame.payload, 2))
+            }
+            c if c == cmd::PUSH_EQ_BAND_VALUE
+                || c == cmd::reply_to(cmd::GET_EQ_BAND_VALUE) =>
+            {
+                Event::EqBandValues(rows(&frame.payload, 2))
+            }
+            c if c == cmd::PUSH_EQ_LIMIT || c == cmd::reply_to(cmd::GET_EQ_LIMIT) => {
+                Event::EqLimits(rows(&frame.payload, 1))
+            }
+            c if c == cmd::PUSH_EQ_GAIN_WIDE
+                || c == cmd::reply_to(cmd::GET_EQ_GAIN_WIDE) =>
+            {
+                Event::EqGainsWide(rows(&frame.payload, 2))
+            }
+            c if c == cmd::PUSH_EQ_STATE || c == cmd::reply_to(cmd::GET_EQ_STATE) => {
+                Event::EqState(frame.payload.clone())
+            }
             _ => Event::Unknown {
                 cmd: frame.cmd,
                 payload: frame.payload.clone(),
@@ -157,6 +267,12 @@ impl Event {
             Event::Serial(text) => format!("serial {text}"),
             Event::Product(text) => format!("product {text}"),
             Event::Firmware(text) => format!("firmware {text}"),
+            Event::EqGains(gains) => format!("eq gains {}", signed(gains)),
+            Event::EqFrequencies(rows) => format!("eq frequencies {}", values(rows)),
+            Event::EqBandValues(rows) => format!("eq band values {}", values(rows)),
+            Event::EqLimits(rows) => format!("eq limits {}", values(rows)),
+            Event::EqGainsWide(rows) => format!("eq gains wide {}", values(rows)),
+            Event::EqState(state) => format!("eq state {}", hex(state)),
             Event::Battery(b) => format!("battery {}", describe_slots(&b.slots)),
             Event::Charging(c) => format!(
                 "charging {}",
@@ -197,6 +313,27 @@ pub struct DeviceState {
     pub product: Option<String>,
     /// Firmware version and build stamp. Read on demand.
     pub firmware: Option<String>,
+    /// The equaliser tables. Populated by registering feature `0x08`, which
+    /// [`crate::Session::open`] already does.
+    pub eq: Equaliser,
+}
+
+/// Render parsed equaliser rows for log output; a band the headset did not
+/// report shows as `-` rather than as zero.
+fn values(rows: &[Option<u16>]) -> String {
+    rows.iter()
+        .map(|row| row.map_or("-".to_string(), |v| v.to_string()))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Render signed gain bytes.
+fn signed(values: &[i8]) -> String {
+    values
+        .iter()
+        .map(i8::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// A payload that reads as a label rather than a flag. The serial number, the
@@ -237,6 +374,12 @@ impl DeviceState {
             Event::Serial(text) => self.serial = Some(text.clone()),
             Event::Product(text) => self.product = Some(text.clone()),
             Event::Firmware(text) => self.firmware = Some(text.clone()),
+            Event::EqGains(gains) => self.eq.gains = gains.clone(),
+            Event::EqFrequencies(rows) => self.eq.frequencies = rows.clone(),
+            Event::EqBandValues(rows) => self.eq.band_values = rows.clone(),
+            Event::EqLimits(rows) => self.eq.limits = rows.clone(),
+            Event::EqGainsWide(rows) => self.eq.gains_wide = rows.clone(),
+            Event::EqState(state) => self.eq.state = state.clone(),
         }
     }
 
@@ -538,6 +681,56 @@ mod tests {
                 "{payload:?} must stay an unknown frame"
             );
         }
+    }
+
+    /// Live capture from a MOMENTUM 5 after registering feature `0x08`: the eight
+    /// centre frequencies as (band, u16 BE) rows, and the flat gain row.
+    #[test]
+    fn decodes_the_equaliser_pushes() {
+        const FREQUENCIES: [u8; 24] = [
+            0x00, 0x00, 0x5a, 0x01, 0x01, 0x45, 0x02, 0x05, 0xdc, 0x03, 0x09, 0xc4, 0x04, 0x11,
+            0x94, 0x05, 0x1f, 0x40, 0x06, 0x32, 0xc8, 0x07, 0x3e, 0x80,
+        ];
+        let event = Event::decode(&frame(cmd::PUSH_EQ_FREQUENCY, &FREQUENCIES));
+        let Event::EqFrequencies(rows) = &event else {
+            panic!("expected frequency rows, got {event:?}");
+        };
+        assert_eq!(
+            rows.iter().map(|row| row.unwrap()).collect::<Vec<_>>(),
+            vec![90, 325, 1500, 2500, 4500, 8000, 13000, 16000],
+            "these are the eight bands the Sennheiser app offers"
+        );
+
+        let mut state = DeviceState::default();
+        state.apply(&event);
+        state.apply(&Event::EqGains(vec![0; 8]));
+        state.apply(&Event::decode(&frame(
+            cmd::PUSH_EQ_LIMIT,
+            &[0x00, 0x0e, 0x01, 0x0e],
+        )));
+        assert_eq!(state.eq.bands(), 8);
+        assert!(!state.eq.is_empty());
+        assert_eq!(
+            state.eq.limits[1],
+            Some(14),
+            "rows land at the index the headset named"
+        );
+        assert_eq!(state.eq.limits.len(), 2, "only two limit rows were sent");
+        assert_eq!(
+            state.eq.limits.get(7),
+            None,
+            "a band nobody described stays absent, not zero"
+        );
+        assert_eq!(state.eq.gains.iter().sum::<i8>(), 0, "flat EQ");
+    }
+
+    #[test]
+    fn an_incomplete_equaliser_row_describes_no_band() {
+        let event = Event::decode(&frame(cmd::PUSH_EQ_FREQUENCY, &[0x00, 0x00, 0x5a, 0x01]));
+        let Event::EqFrequencies(rows) = &event else {
+            panic!("expected frequency rows, got {event:?}");
+        };
+        assert_eq!(rows.as_slice(), &[Some(90)], "a stray byte is not a band");
     }
 
     #[test]

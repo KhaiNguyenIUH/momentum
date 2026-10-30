@@ -88,6 +88,16 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
+    /// Print the equaliser: every band with its centre frequency and the values
+    /// the headset stores for it. Read-only by design — the write path exists on
+    /// the wire and was confirmed with a no-op, but the gain scale in decibels
+    /// has never been measured, and this tool will not print a number it cannot
+    /// account for.
+    Eq {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Print every state push the headset sends, for as long as you watch.
     Watch {
         /// Seconds to keep the channel open.
@@ -213,6 +223,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::RfScan { filter, uuid } => Some(rf_scan(filter, uuid.as_deref())),
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
+        Command::Eq { filter } => Some(eq(filter)),
         Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -337,6 +348,56 @@ fn status(filter: &str) -> Result<(), Boxed> {
     if let Some(identity) = identity {
         println!("device: {identity}");
     }
+    for warning in &session.warnings {
+        println!("note: {warning}");
+    }
+    Ok(())
+}
+
+/// The equaliser as one table. Only the frequency column carries a unit the
+/// wire actually establishes; the rest are printed as the headset's own numbers.
+#[cfg(windows)]
+fn eq(filter: &str) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    let eq = session.equaliser()?;
+    if eq.is_empty() {
+        println!("the headset sent no equaliser tables");
+        for warning in &session.warnings {
+            println!("note: {warning}");
+        }
+        return Ok(());
+    }
+
+    let cell = |row: &[Option<u16>], band: usize| {
+        row.get(band).copied().flatten().map_or_else(
+            || "-".to_string(),
+            |value| value.to_string(),
+        )
+    };
+    println!(
+        "{:<4} {:>8}  {:>5}  {:>8}  {:>6}  {:>6}",
+        "band", "freq/Hz", "gain", "gain16", "value", "limit"
+    );
+    for band in 0..eq.bands() {
+        println!(
+            "{:<4} {:>8}  {:>5}  {:>8}  {:>6}  {:>6}",
+            band,
+            cell(&eq.frequencies, band),
+            eq.gains
+                .get(band)
+                .map_or_else(|| "-".to_string(), i8::to_string),
+            cell(&eq.gains_wide, band),
+            cell(&eq.band_values, band),
+            cell(&eq.limits, band),
+        );
+    }
+    if !eq.state.is_empty() {
+        println!("state, meaning unknown: {:02x?}", eq.state);
+    }
+    println!(
+        "freq/Hz is measured; gain, gain16 and value are stored numbers with no \
+         established scale, and limit read 14 on every band."
+    );
     for warning in &session.warnings {
         println!("note: {warning}");
     }

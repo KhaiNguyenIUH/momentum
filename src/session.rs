@@ -19,20 +19,27 @@ use crate::proto::cmd;
 use crate::proto::frame::{
     Frame, VENDOR_QUALCOMM, VENDOR_SENNHEISER,
 };
-use crate::proto::state::{DeviceState, Event};
+use crate::proto::state::{DeviceState, Equaliser, Event};
 
 /// How long to wait for a reply before giving up. The headset answers in
 /// single-digit milliseconds over a connected RFCOMM channel, so this only
 /// fires when it genuinely does not support a command.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_millis(1500);
 
+/// How long [`Session::equaliser`] waits in total, and how long a gap in the
+/// pushes counts as "the headset has finished". Measured on a MOMENTUM 5: the
+/// six rows arrive back to back within a few milliseconds of the ack.
+const EQ_WINDOW: Duration = Duration::from_millis(1200);
+const EQ_QUIET: Duration = Duration::from_millis(250);
+
 /// Features subscribed by [`Session::open`]: battery, noise control,
-/// transparency and the user equaliser.
+/// transparency and the equaliser. Registering the last is what makes the
+/// headset push its band tables; see [`Session::equaliser`].
 pub const DEFAULT_FEATURES: [u8; 4] = [
     cmd::feature::BATTERY,
     cmd::feature::ANC,
     cmd::feature::TRANSPARENCY,
-    cmd::feature::USER_EQ,
+    cmd::feature::EQ,
 ];
 
 /// Live protocol session over a [`Link`].
@@ -212,6 +219,34 @@ impl<L: Link> Session<L> {
         self.firmware()?;
         self.serial()?;
         Ok(self.state.identity())
+    }
+
+    /// The equaliser tables.
+    ///
+    /// Registration is the read: the base ids refuse a bare query with `05`, and
+    /// the headset sends every table as a push the moment feature `0x08` is
+    /// subscribed — which [`Session::open`] already does, so this usually just
+    /// waits for what is already on its way. It keeps reading until the channel
+    /// goes quiet rather than returning the first table, because half an EQ
+    /// reported as a whole one is worse than nothing.
+    pub fn equaliser(&mut self) -> Result<Equaliser> {
+        if self.state.eq.is_empty() {
+            self.request(cmd::REGISTER_FEATURE, [cmd::feature::EQ], DEFAULT_TIMEOUT)?;
+        }
+        let started = Instant::now();
+        let mut last = Instant::now();
+        while started.elapsed() < EQ_WINDOW && last.elapsed() < EQ_QUIET {
+            match self.link.read_frame(EQ_QUIET)? {
+                Some(frame) => {
+                    self.state.apply(&Event::decode(&frame));
+                    last = Instant::now();
+                }
+                // The link is gone; report whatever arrived rather than
+                // pretending the table is complete.
+                None => break,
+            }
+        }
+        Ok(self.state.eq.clone())
     }
 
     /// Write a value, then read it back so callers see confirmed state.
