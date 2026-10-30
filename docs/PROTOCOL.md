@@ -249,13 +249,64 @@ Two findings from the same measurement, both of which cost time:
   fails with `0x80070057`, which reads like a bad argument rather than a wrong
   naming layer.
 
+## The equaliser
+
+Feature `0x08` — listed as *probable, from the MOMENTUM 4* — is real on this
+firmware, and registering it is the read path. `0x0007 [08]` answers the usual
+`0x0107` ack and then pushes the whole configuration unsolicited:
+
+| Push | Base | Payload | Read as |
+| --- | --- | --- | --- |
+| `0x1082` | `0x1002` | `00 00 00 00 00 00 00 00` | user gains, one signed byte per band — all flat on this unit |
+| `0x108b` | `0x100b` | `00 00 5a 01 01 45 02 05 dc …` | eight (band, u16 BE) rows = **centre frequencies 90, 325, 1500, 2500, 4500, 8000, 13000, 16000 Hz** |
+| `0x108d` | `0x100d` | `00 08 00 01 0b 5c …` | eight (band, u16 BE) rows: 0x0800 for band 0, 0x0b5c for the rest — unit unknown |
+| `0x108f` | `0x100f` | `00 0e 01 0e … 07 0e` | eight (band, u8) rows, all 14 — a per-band limit, unit unknown |
+| `0x1091` | `0x1011` | `00 00 00 01 00 00 …` | eight (band, u16 BE) rows of user gain, all zero |
+| `0x1093` | `0x1013` | `00 00` | two bytes, meaning unknown |
+| `0x1089` | `0x1009` | `00` | this is the **bass boost** push, not EQ — the ids sit in the same range |
+
+Eight bands with those frequencies is exactly what the Sennheiser app offers, so
+the frequency table is almost certainly right. **The row layout is inference from
+one device; the ids and payloads are measurements.**
+
+### Indexed reads, and the even/odd rule
+
+These ids are push-only as bare reads — `0x1002`/`0x100b`/`0x100d`/`0x1011` with an
+empty payload all answer `0x018x`… `0x118x [05]`, not supported. They take a **band
+index**:
+
+| Query | Reply | Meaning |
+| --- | --- | --- |
+| `0x1003 []` | `0x1103 [00 ×8]` | all eight user gains at once |
+| `0x100b [i]` | `0x110b [i, 00, 5a]` | centre frequency of band `i` |
+| `0x100d [i]` | `0x110d [i, 08, 00]` | that row's value for band `i` |
+| `0x100f [i]` | `0x110f [i, 0e]` | the per-band limit |
+| `0x1011 [i]` | `0x1111 [i, 00, 00]` | user gain of band `i` as u16 |
+| `0x1013 [i]` | `0x1113 [00, 00]` | unknown |
+
+Even ids write, odd ids read — the same rule as bass boost (`0x1008`/`0x1009`) and
+the ambient level (`0x1A02`/`0x1A03`). Confirmed by writing values the device had
+just reported, so nothing changed:
+
+- `0x1010 [00, 00, 00]` → ack `0x1110 []`, then `0x1091` re-pushed the full table.
+- `0x1012 [00, 00]` → ack `0x1112 []`, then `0x1093` re-pushed.
+- `0x100e [00, 00, 0e]` → **refused `[05]`**: not every even id is writable, and the
+  frequencies and limits are read-only, which is the right way round.
+
+Still missing before `momentum eq` can take decibels instead of raw bytes: the
+**scale and sign of a gain byte** (is `01` = 0.5 dB? is the range ±14, given the
+limit row?) and whether `0x1002` takes `(band, gain)` — eight bytes were refused
+where one byte was accepted. Both need one audible write, which is easy to undo
+but should be a deliberate act, not a side effect of probing.
+
 ## Still unknown
 
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
-- **User EQ.** Feature `0x08` and the MOMENTUM 4 tool agree on the ids; the MOMENTUM 5
-  payload layout is unmeasured, and a wrong-length payload is the surest way to
-  get `0x02` back.
+- **User EQ command shape.** See *The equaliser* — the ids, the band table and the
+  write acks are measured; the dB scale and the multi-band write shape are not.
+- **The dB scale of an EQ gain**, and the shape `0x1002` wants when writing gains.
+  See *The equaliser* above; both need one deliberate audible write.
 - **What `0x0001` and `0x0002` mean in the Sennheiser namespace.** Both answer, and
   the 13-byte `0x0101` looks like a feature/version list. Decoding it is a
   reading problem, not a missing command.

@@ -10,19 +10,20 @@ futures = "0.3"
 tokio = { version = "1", features = ["rt", "time"] }
 
 [target.'cfg(windows)'.dependencies]
+# Only the features the code names. Several obvious-looking entries are implied
+# by another one and are dead weight to list: Devices_Bluetooth comes from
+# Devices_Bluetooth_Rfcomm, Foundation from Foundation_Collections,
+# Win32_Media_Audio from ..._Endpoints, Win32_System_Com from
+# ..._StructuredStorage. Win32_System_Variant looks unrelated but is required:
+# IMMDevice::Activate is compiled only with Variant *and* StructuredStorage on.
 windows = { version = "0.62", features = [
-    "Devices_Bluetooth",
     "Devices_Bluetooth_Rfcomm",
     "Devices_Enumeration",
-    "Foundation",
     "Foundation_Collections",
     "Media_Devices",
     "Networking_Sockets",
     "Storage_Streams",
-    "Win32_Foundation",
-    "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
-    "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
     "Win32_System_WinRT",
