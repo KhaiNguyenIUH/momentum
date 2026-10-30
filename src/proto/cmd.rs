@@ -155,9 +155,15 @@ pub const GET_EQ_LIMIT: u16 = 0x100f;
 /// accepts, and echoes it back. None of it was audible, at 90 Hz or at 2.5 kHz, and
 /// the app's own slider moves never touch this table. Two readings survive: the
 /// equaliser is switched off elsewhere, or the headset normalises level underneath
-/// and small single-band changes were masked. Not settled, so nothing here writes
-/// it.
+/// and small single-band changes were masked. Not settled — which is why the CLI
+/// grew a deliberate, temporary command to write it while someone listens.
 pub const GET_EQ_GAIN_WIDE: u16 = 0x1011;
+/// `0x1010` writes the store [`GET_EQ_GAIN_WIDE`] reads, and unlike its odd
+/// neighbour it takes the **whole table in one frame**: eight `(band, u16 BE)` rows,
+/// 24 bytes. It acknowledges with an empty reply and then pushes
+/// [`PUSH_EQ_GAIN_WIDE`] back. Carries the same caution as the id it writes — no
+/// audible effect has ever been confirmed from it.
+pub const SET_EQ_GAIN_WIDE: u16 = 0x1010;
 /// A two-byte row whose meaning is unknown. Read live, kept raw.
 pub const GET_EQ_STATE: u16 = 0x1013;
 
@@ -253,6 +259,7 @@ pub fn name(cmd: u16) -> &'static str {
         0x110b => "eq_frequency_reply",
         0x110d => "eq_band_value_reply",
         0x110f => "eq_limit_reply",
+        0x1110 => "eq_gain_wide_ack",
         0x1111 => "eq_gain_wide_reply",
         0x1113 => "eq_state_reply",
         0x0482 => "unit_state_push",

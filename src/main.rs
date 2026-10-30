@@ -104,6 +104,27 @@ enum Command {
         #[arg(long)]
         raw: bool,
     },
+    /// Temporary listening test: write an ascending −6 … +6 dB tilt into the
+    /// writable u16 store (`0x1010`), then read it back from the device and report
+    /// whether it stuck. This is the store this host can write, and the one no ear
+    /// has ever confirmed — switch between `ramp1` and `ramp2` with music playing.
+    Ramp1 {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Temporary: the mirror image, +6 … −6 dB.
+    Ramp2 {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Temporary: zeros to the same store, undoing a ramp.
+    Ramp0 {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Print every state push the headset sends, for as long as you watch.
     Watch {
         /// Seconds to keep the channel open.
@@ -230,6 +251,9 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
         Command::Eq { filter, raw } => Some(eq(filter, *raw)),
+        Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
+        Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
+        Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
         Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -713,6 +737,50 @@ fn transparency(level: u8, filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let event = session.set_transparency(level)?;
     println!("{} -> {}", event.describe(), session.state.mode().label());
+    Ok(())
+}
+
+/// The tilt written by `ramp1`, in raw units — ten per decibel. Deliberately no
+/// band left at zero, so switching profiles reverses the whole curve rather than
+/// moving one slider.
+#[cfg(windows)]
+const RAMP_UP: [i16; 8] = [-60, -50, -30, -10, 10, 30, 50, 60];
+/// `ramp1` seen in a mirror.
+#[cfg(windows)]
+const RAMP_DOWN: [i16; 8] = [60, 50, 30, 10, -10, -30, -50, -60];
+/// Zeros, to undo either.
+#[cfg(windows)]
+const RAMP_FLAT: [i16; 8] = [0; 8];
+
+/// Write a tilt into the writable store and report per band whether the device
+/// kept it. Temporary instrument, kept because it is the only way this device's
+/// most mysterious table can be tested by ear.
+#[cfg(windows)]
+fn ramp(filter: &str, wanted: &[i16; 8]) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    let eq = session.set_eq_gains_wide(wanted)?;
+    println!("{:<5} {:>8}  {:>8}  {:>6}", "band", "wrote/dB", "read/dB", "stuck?");
+    let mut all = true;
+    for (band, want) in wanted.iter().enumerate() {
+        let got = eq.gains_wide.get(band).copied().flatten().map(|v| v as i16);
+        let ok = got == Some(*want);
+        all &= ok;
+        println!(
+            "{:<5} {:>+8.1}  {:>8}  {:>6}",
+            band,
+            *want as f32 / 10.0,
+            got.map_or_else(|| "-".to_string(), |v| format!("{:+.1}", v as f32 / 10.0)),
+            if ok { "yes" } else { "NO" },
+        );
+    }
+    if all {
+        println!(
+            "stuck: all eight re-read from the headset after re-registering the \
+             feature, not echoed from what we sent."
+        );
+    } else {
+        println!("did not stick: at least one band came back different or absent.");
+    }
     Ok(())
 }
 

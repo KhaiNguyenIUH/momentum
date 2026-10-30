@@ -249,6 +249,24 @@ impl<L: Link> Session<L> {
         Ok(self.state.eq.clone())
     }
 
+    /// Write the u16 gain store as a whole table, in the `(band, u16)` pair format
+    /// this firmware accepts on `0x1010`, then read it back from the device.
+    ///
+    /// The read-back is forced, not assumed: the copy this session already holds is
+    /// dropped and [`Session::equaliser`] re-registers the feature, so what comes
+    /// back is what the headset just said rather than what we told it. A read that
+    /// cannot fail proves nothing.
+    pub fn set_eq_gains_wide(&mut self, gains: &[i16]) -> Result<Equaliser> {
+        let mut payload = Vec::with_capacity(gains.len() * 3);
+        for (band, gain) in gains.iter().enumerate() {
+            payload.push(band as u8);
+            payload.extend_from_slice(&(*gain as u16).to_be_bytes());
+        }
+        self.request(cmd::SET_EQ_GAIN_WIDE, payload, DEFAULT_TIMEOUT)?;
+        self.state.eq = Equaliser::default();
+        self.equaliser()
+    }
+
     /// Write a value, then read it back so callers see confirmed state.
     fn set_and_confirm(&mut self, command: u16, value: u8, confirm: u16) -> Result<Event> {
         self.request(command, [value], DEFAULT_TIMEOUT)?;
