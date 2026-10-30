@@ -100,6 +100,20 @@ impl Equaliser {
         .unwrap_or(0)
     }
 
+    /// The stored gains in **decibels**: ten raw units per dB.
+    ///
+    /// Not an inference. Setting every band to −6 dB in Smart Control and reading
+    /// the table gave −60 on all eight bands, and flat reads 0. That also fixes
+    /// the granularity of a slider drag at 0.1 dB, which is what the single-unit
+    /// steps in a capture looked like.
+    ///
+    /// This applies to the signed-byte store only. The u16 table bounds at ±180
+    /// rather than ±60 and has never been heard to do anything, so it is not
+    /// covered by this scale and is deliberately not converted.
+    pub fn gains_db(&self) -> Vec<f32> {
+        self.gains.iter().map(|&gain| f32::from(gain) / 10.0).collect()
+    }
+
     /// True when no table has arrived, which is how a caller tells "flat" from
     /// "never asked".
     pub fn is_empty(&self) -> bool {
@@ -731,6 +745,27 @@ mod tests {
             panic!("expected frequency rows, got {event:?}");
         };
         assert_eq!(rows.as_slice(), &[Some(90)], "a stray byte is not a band");
+    }
+
+    #[test]
+    fn ten_raw_units_are_one_decibel() {
+        // Live: every band set to -6 dB in Smart Control, the table read back as
+        // -60 on all eight.
+        let eq = Equaliser {
+            gains: vec![-60; 8],
+            ..Equaliser::default()
+        };
+        assert_eq!(eq.gains_db(), vec![-6.0_f32; 8]);
+        let eq = Equaliser {
+            gains: vec![0; 8],
+            ..Equaliser::default()
+        };
+        assert_eq!(eq.gains_db(), vec![0.0_f32; 8]);
+        let eq = Equaliser {
+            gains: vec![5],
+            ..Equaliser::default()
+        };
+        assert_eq!(eq.gains_db(), vec![0.5], "a slider step is 0.1 dB");
     }
 
     #[test]

@@ -100,13 +100,13 @@ pushes, so a long-lived `watch` loop and a one-shot `status` share the same code
 
 ## Notes on real hardware
 
-- **`eq` is read-only on purpose.** Registering feature `0x08` makes the headset
-  push the whole equaliser — eight bands at 90 Hz to 16 kHz, gains, limits — and
-  the write id accepts a value, confirmed with a no-op write of what it had just
-  reported. What is *not* known is the scale: whether a gain byte is dB, half-dB
-  or an index, and whether `0e` means a ±14 dB range. Printing `+6 dB` from a
-  number that might mean 6 half-dB or 6 of 100 would be a fabricated unit, so the
-  column header says `gain` and the footnote says what is unmeasured.
+- **`eq` is read-only, and now for a cleaner reason than it was.** The gain scale
+  is measured — ten raw units per decibel, established by setting every band to
+  −6 dB in Smart Control and reading −60 on all eight — so the table prints real
+  decibels. What is *not* known is which command the app writes with: the byte
+  store refused every write shape tried on it, and the store that does accept
+  writes has never been heard to change the sound. Reading is finished; writing
+  needs the phone's command, not a guess.
 - **Volume is not a headset command.** It travels over AVRCP as "absolute
   volume", and Windows owns that negotiation, so `momentum volume` sets the
   endpoint's master volume — the tray slider's own path, which for Bluetooth

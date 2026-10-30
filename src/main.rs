@@ -374,18 +374,18 @@ fn eq(filter: &str) -> Result<(), Boxed> {
             |value| value.to_string(),
         )
     };
+    let db = eq.gains_db();
     println!(
-        "{:<4} {:>8}  {:>5}  {:>8}  {:>6}  {:>6}",
-        "band", "freq/Hz", "gain", "gain16", "value", "limit"
+        "{:<4} {:>8}  {:>6}  {:>8}  {:>6}  {:>6}",
+        "band", "freq/Hz", "dB", "gain16", "value", "limit"
     );
     for band in 0..eq.bands() {
         println!(
-            "{:<4} {:>8}  {:>5}  {:>8}  {:>6}  {:>6}",
+            "{:<4} {:>8}  {:>6}  {:>8}  {:>6}  {:>6}",
             band,
             cell(&eq.frequencies, band),
-            eq.gains
-                .get(band)
-                .map_or_else(|| "-".to_string(), i8::to_string),
+            db.get(band)
+                .map_or_else(|| "-".to_string(), |gain| format!("{gain:+.1}")),
             cell(&eq.gains_wide, band),
             cell(&eq.band_values, band),
             cell(&eq.limits, band),
@@ -395,8 +395,8 @@ fn eq(filter: &str) -> Result<(), Boxed> {
         println!("state, meaning unknown: {:02x?}", eq.state);
     }
     println!(
-        "freq/Hz is measured; gain, gain16 and value are stored numbers with no \
-         established scale, and limit read 14 on every band."
+        "dB is measured: ten raw units per decibel, calibrated against the app. \
+         gain16 and value are unconverted; limit read 14 on every band."
     );
     for warning in &session.warnings {
         println!("note: {warning}");

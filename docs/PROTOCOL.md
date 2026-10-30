@@ -331,11 +331,16 @@ value is not the slider's limit either. Preset curves seen (bands 0–7, raw):
  25, 18,  5,-12,-15,  0, -15, -15
 ```
 
-The unit is still not pinned down: `0.1 dB` per step would make the span
-−3.5…+3.0 dB and `0.2 dB` would make it −7.0…+6.0 dB. Both are plausible for a
-headphone EQ, and telling them apart needs the number the app prints next to a
-slider, which is not something the wire can supply. Until it is known, this crate
-prints the stored byte and says so.
+**The scale is now measured: ten raw units per decibel.** Setting every band to
+−6 dB in Smart Control and reading the table gave **−60 on all eight**, and flat
+reads 0. That reinterprets the earlier capture correctly: the preset extremes of
+−35 and +30 were **−3.5 dB and +3.0 dB**, and the single-unit steps during a drag
+were 0.1 dB. The `14` reported by `0x100f` is confirmed *not* to be the slider
+range, since −6 dB (= −60) sits comfortably outside it.
+
+What remains unknown is the **write command**, not the unit: `0x1002` refused both
+the eight-byte and the `(band, gain)` shape, so the byte store's write path is
+still the app's own.
 
 **One correction to note.** Eight-byte pushes prove the *notification* carries a
 whole table, and the band-by-band progression implies eight separate writes, but
