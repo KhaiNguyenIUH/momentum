@@ -64,17 +64,20 @@ impl Charging {
 
 /// The equaliser tables, as the headset reports them.
 ///
-/// Every field is raw on purpose except [`Equaliser::frequencies`], which is in
-/// hertz because the eight values it yields — 90 to 16000 — are unambiguous.
-/// The gain fields are *stored values*, not decibels: the scale has never been
-/// measured, and inventing one would let a caller write a number that means
-/// something else than it says.
+/// [`Equaliser::gains_db`] is the calibrated field: ten raw units per decibel,
+/// established against the app's own slider labels. Everything else is stored raw,
+/// including [`Equaliser::row_100b`], which looks like a frequency table and is not
+/// the graphic equaliser's bands — see [`APP_BANDS_HZ`] for what the app actually
+/// offers. Inventing units is what this struct is arranged to make awkward.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Equaliser {
     /// One signed byte per band, the compact form. All zero means flat.
     pub gains: Vec<i8>,
-    /// Centre frequency per band, hertz. The only field with a known unit.
-    pub frequencies: Vec<Option<u16>>,
+    /// A per-band u16 from `0x100b`, in what is probably hertz — **but not** the
+    /// graphic EQ's centre frequencies, which are 50 Hz to 12 kHz (see
+    /// [`APP_BANDS_HZ`]). Eight values, ascending, belonging to some other filter
+    /// bank. Named for its command id rather than for a meaning it does not have.
+    pub row_100b: Vec<Option<u16>>,
     /// Per-band u16 from `0x100d`, unit unidentified.
     pub band_values: Vec<Option<u16>>,
     /// Per-band limit from `0x100f`; `14` everywhere on a MOMENTUM 5.
@@ -85,12 +88,21 @@ pub struct Equaliser {
     pub state: Vec<u8>,
 }
 
+/// The centre frequencies Smart Control's graphic EQ offers, ascending.
+///
+/// Observed in the app, not read from the wire, and matched to band order — the
+/// app lists eight bands and the headset stores eight gains. That is why
+/// [`Equaliser::row_100b`] is not this: the device's own table says
+/// 90, 325, 1500, 2500, 4500, 8000, 13000, 16000, which is a different filter
+/// bank and whose purpose is not known.
+pub const APP_BANDS_HZ: [u16; 8] = [50, 100, 250, 600, 1400, 3000, 7000, 12000];
+
 impl Equaliser {
     /// How many bands the headset has described so far.
     pub fn bands(&self) -> usize {
         [
             self.gains.len(),
-            self.frequencies.len(),
+            self.row_100b.len(),
             self.band_values.len(),
             self.limits.len(),
             self.gains_wide.len(),
@@ -108,8 +120,8 @@ impl Equaliser {
     /// steps in a capture looked like.
     ///
     /// This applies to the signed-byte store only. The u16 table bounds at ±180
-    /// rather than ±60 and has never been heard to do anything, so it is not
-    /// covered by this scale and is deliberately not converted.
+    /// rather than the ±60 this scale implies for a ±6 dB slider, so it is not
+    /// covered by it and is deliberately not converted.
     pub fn gains_db(&self) -> Vec<f32> {
         self.gains.iter().map(|&gain| f32::from(gain) / 10.0).collect()
     }
@@ -171,7 +183,7 @@ pub enum Event {
     /// share a payload shape. (live)
     EqGains(Vec<i8>),
     /// See [`Event::EqGains`]. Values are hertz.
-    EqFrequencies(Vec<Option<u16>>),
+    EqRow100b(Vec<Option<u16>>),
     /// See [`Event::EqGains`]. Unit unidentified.
     EqBandValues(Vec<Option<u16>>),
     /// See [`Event::EqGains`].
@@ -250,7 +262,7 @@ impl Event {
             c if c == cmd::PUSH_EQ_FREQUENCY
                 || c == cmd::reply_to(cmd::GET_EQ_FREQUENCY) =>
             {
-                Event::EqFrequencies(rows(&frame.payload, 2))
+                Event::EqRow100b(rows(&frame.payload, 2))
             }
             c if c == cmd::PUSH_EQ_BAND_VALUE
                 || c == cmd::reply_to(cmd::GET_EQ_BAND_VALUE) =>
@@ -282,7 +294,7 @@ impl Event {
             Event::Product(text) => format!("product {text}"),
             Event::Firmware(text) => format!("firmware {text}"),
             Event::EqGains(gains) => format!("eq gains {}", signed(gains)),
-            Event::EqFrequencies(rows) => format!("eq frequencies {}", values(rows)),
+            Event::EqRow100b(rows) => format!("eq 0x100b rows {}", values(rows)),
             Event::EqBandValues(rows) => format!("eq band values {}", values(rows)),
             Event::EqLimits(rows) => format!("eq limits {}", values(rows)),
             Event::EqGainsWide(rows) => format!("eq gains wide {}", values(rows)),
@@ -389,7 +401,7 @@ impl DeviceState {
             Event::Product(text) => self.product = Some(text.clone()),
             Event::Firmware(text) => self.firmware = Some(text.clone()),
             Event::EqGains(gains) => self.eq.gains = gains.clone(),
-            Event::EqFrequencies(rows) => self.eq.frequencies = rows.clone(),
+            Event::EqRow100b(rows) => self.eq.row_100b = rows.clone(),
             Event::EqBandValues(rows) => self.eq.band_values = rows.clone(),
             Event::EqLimits(rows) => self.eq.limits = rows.clone(),
             Event::EqGainsWide(rows) => self.eq.gains_wide = rows.clone(),
@@ -697,8 +709,8 @@ mod tests {
         }
     }
 
-    /// Live capture from a MOMENTUM 5 after registering feature `0x08`: the eight
-    /// centre frequencies as (band, u16 BE) rows, and the flat gain row.
+    /// Live capture from a MOMENTUM 5 after registering feature `0x08`: the
+    /// `0x100b` rows as (band, u16 BE), and the flat gain row.
     #[test]
     fn decodes_the_equaliser_pushes() {
         const FREQUENCIES: [u8; 24] = [
@@ -706,13 +718,13 @@ mod tests {
             0x94, 0x05, 0x1f, 0x40, 0x06, 0x32, 0xc8, 0x07, 0x3e, 0x80,
         ];
         let event = Event::decode(&frame(cmd::PUSH_EQ_FREQUENCY, &FREQUENCIES));
-        let Event::EqFrequencies(rows) = &event else {
+        let Event::EqRow100b(rows) = &event else {
             panic!("expected frequency rows, got {event:?}");
         };
         assert_eq!(
             rows.iter().map(|row| row.unwrap()).collect::<Vec<_>>(),
             vec![90, 325, 1500, 2500, 4500, 8000, 13000, 16000],
-            "these are the eight bands the Sennheiser app offers"
+            "eight ascending values; NOT the app's bands, which are 50 Hz to 12 kHz"
         );
 
         let mut state = DeviceState::default();
@@ -741,7 +753,7 @@ mod tests {
     #[test]
     fn an_incomplete_equaliser_row_describes_no_band() {
         let event = Event::decode(&frame(cmd::PUSH_EQ_FREQUENCY, &[0x00, 0x00, 0x5a, 0x01]));
-        let Event::EqFrequencies(rows) = &event else {
+        let Event::EqRow100b(rows) = &event else {
             panic!("expected frequency rows, got {event:?}");
         };
         assert_eq!(rows.as_slice(), &[Some(90)], "a stray byte is not a band");

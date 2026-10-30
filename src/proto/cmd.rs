@@ -131,8 +131,13 @@ pub const PUSH_TRANSPARENCY_ON: u16 = 0x1885;
 /// **scale is unmeasured**: no write other than the value already in effect has
 /// been sent, so this crate does not translate bytes into decibels.
 pub const GET_EQ_GAINS: u16 = 0x1003;
-/// Centre frequency of one band, in Hz, big-endian u16. The eight bands of a
-/// MOMENTUM 5 are 90, 325, 1500, 2500, 4500, 8000, 13000 and 16000 Hz.
+/// A per-band u16 from `0x100b`, ascending, in what is probably hertz.
+///
+/// **This is not the graphic equaliser's band set.** Smart Control offers 50, 100,
+/// 250, 600, 1400, 3000, 7000 and 12000 Hz, while this table reads 90, 325, 1500,
+/// 2500, 4500, 8000, 13000 and 16000 — eight values, ascending, a different filter
+/// bank. The id keeps the word "frequency" because that is the likeliest unit, not
+/// because the band set is known.
 pub const GET_EQ_FREQUENCY: u16 = 0x100b;
 /// A per-band u16 whose unit is unidentified — `0x0800` on band 0 and `0x0b5c`
 /// on the others here. Named for its id because naming it anything else would

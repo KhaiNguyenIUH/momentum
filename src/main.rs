@@ -354,8 +354,9 @@ fn status(filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
-/// The equaliser as one table. Only the frequency column carries a unit the
-/// wire actually establishes; the rest are printed as the headset's own numbers.
+/// The equaliser as one table. The `dB` column is calibrated; the rest are raw
+/// values whose units the wire has not established, including the device's own
+/// band table, which disagrees with the app about where the bands are.
 #[cfg(windows)]
 fn eq(filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
@@ -374,18 +375,23 @@ fn eq(filter: &str) -> Result<(), Boxed> {
             |value| value.to_string(),
         )
     };
+    use momentum::APP_BANDS_HZ;
+
     let db = eq.gains_db();
     println!(
-        "{:<4} {:>8}  {:>6}  {:>8}  {:>6}  {:>6}",
-        "band", "freq/Hz", "dB", "gain16", "value", "limit"
+        "{:<4} {:>7}  {:>6}  {:>7}  {:>8}  {:>6}  {:>6}",
+        "band", "app/Hz", "dB", "0x100b", "gain16", "value", "limit"
     );
     for band in 0..eq.bands() {
         println!(
-            "{:<4} {:>8}  {:>6}  {:>8}  {:>6}  {:>6}",
+            "{:<4} {:>7}  {:>6}  {:>7}  {:>8}  {:>6}  {:>6}",
             band,
-            cell(&eq.frequencies, band),
+            APP_BANDS_HZ
+                .get(band)
+                .map_or_else(|| "-".to_string(), |hz| format!("{hz}")),
             db.get(band)
                 .map_or_else(|| "-".to_string(), |gain| format!("{gain:+.1}")),
+            cell(&eq.row_100b, band),
             cell(&eq.gains_wide, band),
             cell(&eq.band_values, band),
             cell(&eq.limits, band),
@@ -395,8 +401,9 @@ fn eq(filter: &str) -> Result<(), Boxed> {
         println!("state, meaning unknown: {:02x?}", eq.state);
     }
     println!(
-        "dB is measured: ten raw units per decibel, calibrated against the app. \
-         gain16 and value are unconverted; limit read 14 on every band."
+        "dB is measured: ten raw units per decibel against the app's labels. app/Hz \
+         is what Smart Control calls the bands; the device's own 0x100b table says \
+         something else and is unnamed. gain16, value and limit are unconverted."
     );
     for warning in &session.warnings {
         println!("note: {warning}");

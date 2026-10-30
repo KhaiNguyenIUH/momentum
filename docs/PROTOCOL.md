@@ -258,16 +258,30 @@ firmware, and registering it is the read path. `0x0007 [08]` answers the usual
 | Push | Base | Payload | Read as |
 | --- | --- | --- | --- |
 | `0x1082` | `0x1002` | `00 00 00 00 00 00 00 00` | user gains, one signed byte per band — all flat on this unit |
-| `0x108b` | `0x100b` | `00 00 5a 01 01 45 02 05 dc …` | eight (band, u16 BE) rows = **centre frequencies 90, 325, 1500, 2500, 4500, 8000, 13000, 16000 Hz** |
+| `0x108b` | `0x100b` | `00 00 5a 01 01 45 02 05 dc …` | eight (band, u16 BE) rows: 90, 325, 1500, 2500, 4500, 8000, 13000, 16000 — ascending, probably hertz, **not the graphic EQ's bands** |
 | `0x108d` | `0x100d` | `00 08 00 01 0b 5c …` | eight (band, u16 BE) rows: 0x0800 for band 0, 0x0b5c for the rest — unit unknown |
 | `0x108f` | `0x100f` | `00 0e 01 0e … 07 0e` | eight (band, u8) rows, all 14 — a per-band limit, unit unknown |
 | `0x1091` | `0x1011` | `00 00 00 01 00 00 …` | eight (band, u16 BE) rows of user gain, all zero |
 | `0x1093` | `0x1013` | `00 00` | two bytes, meaning unknown |
 | `0x1089` | `0x1009` | `00` | this is the **bass boost** push, not EQ — the ids sit in the same range |
 
-Eight bands with those frequencies is exactly what the Sennheiser app offers, so
-the frequency table is almost certainly right. **The row layout is inference from
-one device; the ids and payloads are measurements.**
+**Retracted: this table is not the equaliser's band set.** An earlier version of
+this section read those eight numbers as the centre frequencies, and reasoned that
+eight ascending values in the plausible audio range "is exactly what the app
+offers" — which was not true and was never checked. **Smart Control's graphic EQ
+offers 50, 100, 250, 600, 1.4 k, 3 k, 7 k and 12 k Hz.** Both sets have eight
+members and both ascend; neither scales into the other (50 → 90 is ×1.8, 12000 →
+16000 is ×1.33), so this is a different filter bank, and its purpose is unknown.
+It is printed as `0x100b`, never as hertz, and the app's real band labels live in
+`APP_BANDS_HZ`.
+
+The lesson is worth keeping beside the mistake: an ascending run of numbers in a
+plausible unit is not a band set. That the gains were calibrated correctly, against
+the app's own slider labels, is exactly why the frequencies could not be trusted by
+the same route — nobody can read a decibel off a frequency.
+
+**The row layout is inference from one device; the ids and payloads are
+measurements.**
 
 ### Indexed reads, and the even/odd rule
 
