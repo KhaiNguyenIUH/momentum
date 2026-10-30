@@ -378,33 +378,53 @@ fn eq(filter: &str) -> Result<(), Boxed> {
     use momentum::APP_BANDS_HZ;
 
     let db = eq.gains_db();
-    println!(
-        "{:<4} {:>7}  {:>6}  {:>7}  {:>8}  {:>6}  {:>6}",
-        "band", "app/Hz", "dB", "0x100b", "gain16", "value", "limit"
-    );
+    println!("{:<4} {:>8}  {:>6}", "band", "app/Hz", "dB");
     for band in 0..eq.bands() {
         println!(
-            "{:<4} {:>7}  {:>6}  {:>7}  {:>8}  {:>6}  {:>6}",
+            "{:<4} {:>8}  {:>6}",
             band,
             APP_BANDS_HZ
                 .get(band)
-                .map_or_else(|| "-".to_string(), |hz| format!("{hz}")),
+                .map_or_else(|| "-".to_string(), |hz| hz.to_string()),
             db.get(band)
                 .map_or_else(|| "-".to_string(), |gain| format!("{gain:+.1}")),
-            cell(&eq.row_100b, band),
-            cell(&eq.gains_wide, band),
-            cell(&eq.band_values, band),
-            cell(&eq.limits, band),
         );
     }
-    if !eq.state.is_empty() {
-        println!("state, meaning unknown: {:02x?}", eq.state);
-    }
     println!(
-        "dB is measured: ten raw units per decibel against the app's labels. app/Hz \
-         is what Smart Control calls the bands; the device's own 0x100b table says \
-         something else and is unnamed. gain16, value and limit are unconverted."
+        "dB is calibrated: ten raw units per decibel, read back exactly for a ramp \
+         of -6, -5, -4, -3, -2, -1, 0, +1 set in the app."
     );
+
+    // These carry their own band index, and nothing proves it is the app's band
+    // order — setting a decibel ramp across the sliders left every one of them
+    // untouched. Printing them against app/Hz would imply a relationship that has
+    // never been observed, so they get their own table and their own label.
+    if !(eq.row_100b.is_empty()
+        && eq.gains_wide.is_empty()
+        && eq.band_values.is_empty()
+        && eq.limits.is_empty())
+    {
+        println!(
+            "\nother tables, index space unproven — none moved when the sliders did"
+        );
+        println!(
+            "{:<4} {:>7}  {:>7}  {:>6}  {:>6}",
+            "row", "0x100b", "gain16", "value", "limit"
+        );
+        for row in 0..eq.bands() {
+            println!(
+                "{:<4} {:>7}  {:>7}  {:>6}  {:>6}",
+                row,
+                cell(&eq.row_100b, row),
+                cell(&eq.gains_wide, row),
+                cell(&eq.band_values, row),
+                cell(&eq.limits, row),
+            );
+        }
+        if !eq.state.is_empty() {
+            println!("0x1013 state, meaning unknown: {:02x?}", eq.state);
+        }
+    }
     for warning in &session.warnings {
         println!("note: {warning}");
     }

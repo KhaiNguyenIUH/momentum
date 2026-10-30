@@ -357,6 +357,19 @@ Neither the `0x100d` table (still `2048` / `2908`) nor the `0x1013` state (still
 `[00, 00]`) moved at −6 dB or at +2 dB, so neither is the applied-gain table or a
 level-compensation field. Both remain unnamed.
 
+**The ramp closes the calibration and separates the two index spaces.** Setting the
+app's eight sliders to −6, −5, −4, −3, −2, −1, 0, +1 dB read back as −60, −50, −40,
+−30, −20, −10, 0, +10: seven distinct points, both signs, zero at zero, so the
+scale is linear with no offset. And because each band held a *different* value, the
+ordering is now demonstrated rather than assumed — band *n* of the byte table is
+band *n* of the app, lowest frequency first.
+
+Meanwhile `0x100b`, `0x100d`, `0x100f` and `0x1011` did not move by a single byte.
+Those tables carry explicit band indices, and nothing has ever connected that index
+space to the app's bands. They are therefore printed separately and labelled
+*index space unproven*; lining them up against the app's frequencies would be a
+relationship invented for the sake of a tidy table.
+
 ### Loudness does not track the curve
 
 Reported while measuring: **−6 dB across all eight bands and +2 dB across all eight
