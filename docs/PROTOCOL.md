@@ -481,6 +481,20 @@ what was stored while `0x1093` reports the pair reversed, so a value of 1 writte
 a profile selector: states `00`, `01`, `02` and `03` all reported the same gain
 curve.
 
+### The app does not read the writable store
+
+Decisive, and cheap: `0x1010` was loaded with `+6.0 … −6.0`, verified on a second
+connection, and the phone was then brought back and its saved preset selected. The
+app showed its own `−6 … +1` curve and pushed it into the byte table, while the u16
+values sat underneath, byte-identical. So **the two stores share nothing** — the
+phone keeps its presets locally and pushes them down with a command no second
+connection has ever seen.
+
+That gives the missing write command a *when* without giving it a *what*: it fires
+on preset selection, at an instant we can point at, on a link we are not party to.
+A second GAIA client is told about state; it is not mirrored another connection's
+commands, so no amount of watching from here will capture it.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
