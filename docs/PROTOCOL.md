@@ -346,6 +346,27 @@ different command, possibly the second GAIA service that `rf-scan` shows on RFCO
 channel 1. **A second connection observing the first is not the same as seeing the
 first connection's frames.**
 
+### The u16 store is probably not the audible equaliser
+
+`0x1010` writes the u16 gain of one band, and it will write *anything*: `-50`
+(`0xFFCE`) on band 0 of a MOMENTUM 5 was stored verbatim — no clamp, no refusal,
+an empty `0x1110` ack, the value read back as 65486 — and **nothing was audible**.
+The signed-byte table never moved, and restoring zero left the headset sounding
+exactly as before.
+
+Two conclusions, both negative, both worth keeping.
+
+- An ack here means *the byte went into a slot*, not *the filter moved*. A field
+  that accepts every value in its range without checking is evidence of storage,
+  not of support.
+- Across 170 frames of slider movement the app touched only the signed-byte table.
+  The two are separate stores, and the writable one does not seem to do anything.
+
+This crate therefore **reads both and writes neither**. Writing a command the
+device accepts is not the same as understanding it, and a headset behaving oddly
+for a reason spread across six sessions of probing is worse than a tool that says
+*not implemented*.
+
 ## Still unknown
 
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
