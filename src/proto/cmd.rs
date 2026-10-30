@@ -144,12 +144,13 @@ pub const GET_EQ_LIMIT: u16 = 0x100f;
 /// The user gain of one band as a u16, where the eight-byte form of
 /// [`GET_EQ_GAINS`] reports the same thing in one frame.
 ///
-/// **Writing this changes nothing you can hear.** Its even neighbour `0x1010`
-/// accepted `-50` on band 0, echoed it back verbatim without clamping, and left
-/// the 90 Hz band audibly unchanged on a MOMENTUM 5; the empty `0x1110` ack means
-/// *stored*, not *applied*. Meanwhile the app's own slider moves only ever touch
-/// the signed-byte table, never this one. So the two are different stores, this
-/// one is probably not the audible EQ, and nothing in this crate writes it.
+/// **Writing this changes nothing you can hear, but it is not inert.** Its even
+/// neighbour `0x1010` is range-checked — a MOMENTUM 5 accepted `-180` on a band and
+/// refused `-182` with error `0x82` — stores what it accepts, and echoed it back.
+/// None of it was audible, at 90 Hz or at 2.5 kHz, and the app's own slider moves
+/// never touch this table at all. The likeliest explanation is that the equaliser
+/// is switched off by some other field, [`GET_EQ_STATE`] being the candidate. Not
+/// measured, so nothing in this crate writes it.
 pub const GET_EQ_GAIN_WIDE: u16 = 0x1011;
 /// A two-byte row whose meaning is unknown. Read live, kept raw.
 pub const GET_EQ_STATE: u16 = 0x1013;

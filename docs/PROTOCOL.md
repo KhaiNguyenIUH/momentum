@@ -346,26 +346,31 @@ different command, possibly the second GAIA service that `rf-scan` shows on RFCO
 channel 1. **A second connection observing the first is not the same as seeing the
 first connection's frames.**
 
-### The u16 store is probably not the audible equaliser
+### The u16 store: range-checked, stored, and not audible
 
-`0x1010` writes the u16 gain of one band, and it will write *anything*: `-50`
-(`0xFFCE`) on band 0 of a MOMENTUM 5 was stored verbatim — no clamp, no refusal,
-an empty `0x1110` ack, the value read back as 65486 — and **nothing was audible**.
-The signed-byte table never moved, and restoring zero left the headset sounding
-exactly as before.
+`0x1010` writes the u16 gain of one band. It is **range-checked**: on a MOMENTUM 5,
+band 3 accepted `-50`, `-140`, `-180`, and refused `-182`, `-190`, `-200`, `-2000`
+with `0x1190 [82]` — so the boundary is 180 or 181 by magnitude, and **error `0x82`
+is a range violation**, distinct from the `01` and `05` seen elsewhere. Values
+inside the bound are stored and echoed back; restoring zero reads back flat.
 
-Two conclusions, both negative, both worth keeping.
+And yet **nothing is audible**. `-50` on the 90 Hz band and every value since left
+the sound unchanged, while across 170 frames of app-driven slider movement only the
+signed-byte table ever changed.
 
-- An ack here means *the byte went into a slot*, not *the filter moved*. A field
-  that accepts every value in its range without checking is evidence of storage,
-  not of support.
-- Across 170 frames of slider movement the app touched only the signed-byte table.
-  The two are separate stores, and the writable one does not seem to do anything.
+An earlier version of this document read "accepts any value, no clamp" and
+concluded the field was scratch space. **That was wrong** — it was measured at one
+value, `-50`, and `-2000` disproves it. The corrected reading is less comfortable
+but more honest: a range-checked field that stores what it is given and does nothing
+audible is most consistent with **the equaliser being switched off**, or with this
+table feeding a path that a separate enable governs. `0x1013`/`0x1012` answers
+`[00, 00]` and is writable; that is the obvious candidate for such a switch, and it
+has not been tested.
 
-This crate therefore **reads both and writes neither**. Writing a command the
-device accepts is not the same as understanding it, and a headset behaving oddly
-for a reason spread across six sessions of probing is worse than a tool that says
-*not implemented*.
+So: an ack here means *stored*, not *applied*; acceptance is not understanding. This
+crate **reads both tables and writes neither**, and a headset behaving oddly for a
+reason spread across six sessions of probing is worse than a tool that says *not
+implemented*.
 
 ## Still unknown
 
