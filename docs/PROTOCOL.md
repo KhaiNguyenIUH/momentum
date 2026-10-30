@@ -299,6 +299,53 @@ limit row?) and whether `0x1002` takes `(band, gain)` — eight bytes were refus
 where one byte was accepted. Both need one audible write, which is easy to undo
 but should be a deliberate act, not a side effect of probing.
 
+### What a slider drag looks like on the wire
+
+Captured over the PC connection while a phone running Smart Control moved the
+custom-EQ sliders: the MOMENTUM 5 accepts two connections at once, and every
+change the phone makes is **pushed to the other connection too**. That makes a
+second host an observer of the app's own writes, which is a better way to learn
+this protocol than guessing.
+
+Two facts came out of it.
+
+**The app writes one band per command.** A preset selection arrives as eight
+`0x1082` pushes in band order, each carrying all eight gains with one field
+changed — so the payload is a full eight-byte table, not a single band, and a
+preset is eight writes:
+
+```
+-20,0,0,0,0,0,0,0     -20,0,22,0,0,0,0,0     -20,0,22,27,0,0,0,0   …
+```
+
+**Gains are signed bytes and finer than 1 dB.** Manual drags step by single
+units (`…, 5, -3, -4, -2, 0`) and the observed span across presets and drags is
+**-35 … +30**, well outside the `14` reported by `0x100f` — so that per-band
+value is not the slider's limit either. Preset curves seen (bands 0–7, raw):
+
+```
+-20,  0, 22, 27, 26, 11, -10, -26
+ 30,  0,-15,-19,-12,  0,   5,  10
+  0,-20,-18,  0, 12, 22,  10, -10
+-35,-20, -8,  0,  8, 12,  10,   5
+ 25, 18,  5,-12,-15,  0, -15, -15
+```
+
+The unit is still not pinned down: `0.1 dB` per step would make the span
+−3.5…+3.0 dB and `0.2 dB` would make it −7.0…+6.0 dB. Both are plausible for a
+headphone EQ, and telling them apart needs the number the app prints next to a
+slider, which is not something the wire can supply. Until it is known, this crate
+prints the stored byte and says so.
+
+**One correction to note.** Eight-byte pushes prove the *notification* carries a
+whole table, and the band-by-band progression implies eight separate writes, but
+that is inference about the phone's commands, not an observation of them: our own
+`0x1002` with eight bytes was refused with `05`, while one byte was accepted. So
+the id and shape the app actually writes are still unidentified — possibly a
+different command, possibly the second GAIA service that `rf-scan` shows on RFCOMM
+channel 1. **A second connection observing the first is not the same as seeing the
+first connection's frames.**
+
 ## Still unknown
 
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
@@ -307,6 +354,12 @@ but should be a deliberate act, not a side effect of probing.
   write acks are measured; the dB scale and the multi-band write shape are not.
 - **The dB scale of an EQ gain**, and the shape `0x1002` wants when writing gains.
   See *The equaliser* above; both need one deliberate audible write.
+- **`0x1a81`, seen twice during the same capture**, payload `01 01 03 00 02 00` and
+  once as `01 00 03 00 02 00`. That is `0x1a01` with the notification bit, so it
+  belongs to the noise-control feature and the shape reads like three (mode, value)
+  pairs — plausibly the list of available ANC modes, which is exactly the kind of
+  thing a headset sends when a mode list is asked for or a mode changes. It arrived
+  without this host asking, so the phone's app triggered it. Unnamed, unparsed.
 - **What `0x0001` and `0x0002` mean in the Sennheiser namespace.** Both answer, and
   the 13-byte `0x0101` looks like a feature/version list. Decoding it is a
   reading problem, not a missing command.
