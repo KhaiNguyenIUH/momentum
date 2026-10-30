@@ -69,7 +69,7 @@ answers.
 | --- | --- |
 | `status` | Noise-control mode, ambient level, battery, bass boost, and the device line |
 | `info` | Product name, firmware version with build stamp, serial number |
-| `eq` | The eight bands, gain in decibels, plus the raw tables — read-only, see the note |
+| `eq` | The eight bands and their gain in decibels; `--raw` adds the tables we cannot yet explain |
 | `anc <on\|off>` | Noise cancelling |
 | `transparency <0..=100>` | Transparent-hearing level; `0` turns it off |
 | `bass <on\|off>` | Bass boost |

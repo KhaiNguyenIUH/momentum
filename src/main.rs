@@ -97,6 +97,12 @@ enum Command {
         /// Select by service name or peer address; empty means any.
         #[arg(long, default_value = "")]
         filter: String,
+        /// Also print the raw tables the headset reports but this tool cannot
+        /// yet explain: `0x100b`, the u16 gain store, `0x100d`, `0x100f` and
+        /// `0x1013`. Their band index has never been connected to the app's
+        /// bands, so they are off by default rather than labelled carefully.
+        #[arg(long)]
+        raw: bool,
     },
     /// Print every state push the headset sends, for as long as you watch.
     Watch {
@@ -223,7 +229,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::RfScan { filter, uuid } => Some(rf_scan(filter, uuid.as_deref())),
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
-        Command::Eq { filter } => Some(eq(filter)),
+        Command::Eq { filter, raw } => Some(eq(filter, *raw)),
         Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -358,7 +364,7 @@ fn status(filter: &str) -> Result<(), Boxed> {
 /// values whose units the wire has not established, including the device's own
 /// band table, which disagrees with the app about where the bands are.
 #[cfg(windows)]
-fn eq(filter: &str) -> Result<(), Boxed> {
+fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let eq = session.equaliser()?;
     if eq.is_empty() {
@@ -399,25 +405,34 @@ fn eq(filter: &str) -> Result<(), Boxed> {
     // order — setting a decibel ramp across the sliders left every one of them
     // untouched. Printing them against app/Hz would imply a relationship that has
     // never been observed, so they get their own table and their own label.
-    if !(eq.row_100b.is_empty()
-        && eq.gains_wide.is_empty()
-        && eq.band_values.is_empty()
-        && eq.limits.is_empty())
+    if raw
+        && !(eq.row_100b.is_empty()
+            && eq.gains_wide.is_empty()
+            && eq.band_values.is_empty()
+            && eq.limits.is_empty())
     {
         println!(
             "\nother tables, index space unproven — none moved when the sliders did"
         );
+        // Raw hex next to the decimal: an unexplained number is worth keeping
+        // exactly as the device sent it, not as an interpretation of it.
+        let hexed = |row: &[Option<u16>], at: usize| {
+            row.get(at).copied().flatten().map_or_else(
+                || "-".to_string(),
+                |v| format!("{v:#06x} ({v})"),
+            )
+        };
         println!(
-            "{:<4} {:>7}  {:>7}  {:>6}  {:>6}",
+            "{:<4} {:>7}  {:>7}  {:>14}  {:>6}",
             "row", "0x100b", "gain16", "value", "limit"
         );
         for row in 0..eq.bands() {
             println!(
-                "{:<4} {:>7}  {:>7}  {:>6}  {:>6}",
+                "{:<4} {:>7}  {:>7}  {:>14}  {:>6}",
                 row,
                 cell(&eq.row_100b, row),
                 cell(&eq.gains_wide, row),
-                cell(&eq.band_values, row),
+                hexed(&eq.band_values, row),
                 cell(&eq.limits, row),
             );
         }
