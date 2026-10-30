@@ -446,16 +446,26 @@ fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
                 |v| format!("{v:#06x} ({v})"),
             )
         };
+        // Stored signed — `0x1010` accepted −180 and refused −182, so two's
+        // complement is a fact about representation, not a guess about units.
+        // Printing 65526 for what the device means as −10 is not neutrality, it is
+        // a display that manufactures mystery.
+        let signed = |row: &[Option<u16>], at: usize| {
+            row.get(at)
+                .copied()
+                .flatten()
+                .map_or_else(|| "-".to_string(), |v| (v as i16).to_string())
+        };
         println!(
-            "{:<4} {:>7}  {:>7}  {:>14}  {:>6}",
-            "row", "0x100b", "gain16", "value", "limit"
+            "{:<4} {:>7}  {:>8}  {:>14}  {:>6}",
+            "row", "0x100b", "gain16/s", "value", "limit"
         );
         for row in 0..eq.bands() {
             println!(
-                "{:<4} {:>7}  {:>7}  {:>14}  {:>6}",
+                "{:<4} {:>7}  {:>8}  {:>14}  {:>6}",
                 row,
                 cell(&eq.row_100b, row),
-                cell(&eq.gains_wide, row),
+                signed(&eq.gains_wide, row),
                 hexed(&eq.band_values, row),
                 cell(&eq.limits, row),
             );

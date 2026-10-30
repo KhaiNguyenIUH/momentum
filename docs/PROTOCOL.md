@@ -495,6 +495,25 @@ on preset selection, at an instant we can point at, on a link we are not party t
 A second GAIA client is told about state; it is not mirrored another connection's
 commands, so no amount of watching from here will capture it.
 
+### The listening test: this store does not reach the ears
+
+The last excuse for the u16 store was that level normalisation had been hiding
+small single-band changes. That excuse is gone. The whole table was written as
+`−6, −5, −3, −1, +1, +3, +5, +6` dB and then as its mirror image — no band left at
+zero, the entire tilt reversed — switched back and forth by `momentum ramp1` and
+`ramp2` with music playing and someone listening for it. **No change in the sound.**
+
+So this store is writable, range-checked, durable across connections and
+disconnects, and **not the user equaliser**. Together with the two facts before it —
+the app neither reads it nor clears it, and the byte table is the one that moves —
+the likeliest reading is a factory or service table, or a reserved one. It stays
+documented rather than deleted precisely because it looks like an equaliser and is
+one, which is a trap worth labelling.
+
+The remaining way to change this headset's sound from a PC is the write command for
+the **byte** store, and it is not in the range tried: `0x1002`, `0x100a`, `0x100c`
+and `0x100e` all answer `05` with the phone connected or not.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.

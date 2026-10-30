@@ -153,10 +153,11 @@ pub const GET_EQ_LIMIT: u16 = 0x100f;
 /// inert either.** Its even neighbour `0x1010` is range-checked — a MOMENTUM 5
 /// accepted `-180` on a band and refused `-182` with error `0x82` — stores what it
 /// accepts, and echoes it back. None of it was audible, at 90 Hz or at 2.5 kHz, and
-/// the app's own slider moves never touch this table. Two readings survive: the
-/// equaliser is switched off elsewhere, or the headset normalises level underneath
-/// and small single-band changes were masked. Not settled — which is why the CLI
-/// grew a deliberate, temporary command to write it while someone listens.
+/// the app's own slider moves never touch this table. **Settled by ear rather than
+/// by inference:** the whole table was written as a −6 … +6 dB tilt and then its
+/// mirror image, switched repeatedly with music playing, and the sound did not
+/// change — so the earlier escape that level normalisation had been masking small
+/// changes no longer holds. Whatever this table is, it is not the user equaliser.
 pub const GET_EQ_GAIN_WIDE: u16 = 0x1011;
 /// `0x1010` writes the store [`GET_EQ_GAIN_WIDE`] reads, and unlike its odd
 /// neighbour it takes the **whole table in one frame**: eight `(band, u16 BE)` rows,
