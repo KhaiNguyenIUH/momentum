@@ -453,6 +453,34 @@ it does not mirror another connection's *commands*. The remaining instruments ar
 controller-side snoop log, or the second GAIA service that `rf-scan` shows on
 RFCOMM channel 1, which nothing has ever connected to.
 
+### Which store survives a disconnect
+
+The two stores behave completely differently, and only one of them is durable.
+
+Written to `0x1010` as a whole table — `+60, +50, +30, +10, −10, −30, −50, −60` —
+the values were still there on every read afterwards, through many connections and
+through the phone's Bluetooth being switched off. **`0x1010` accepts the entire
+24-byte table in a single frame**, which `0x1002` never did: one byte, a `(band,
+gain)` pair and a full eight bytes were all refused there.
+
+The byte store did not survive. It had been read as the app's saved `−6 … +1` ramp
+while the phone was connected, and read as **all eight bands at zero** four times
+over a minute after the phone's Bluetooth went off. So the table that the app
+drives, and that tracks every slider move, is not durable state on this side of the
+link — it belongs to the session the phone owns. The honest corollary: even if the
+write command is found, a curve set through it may not outlast the connection, which
+is a very different feature from the one this tool has been aiming at.
+
+One alternative reading, not excluded: the revert is correlated with the
+disconnect, not proven caused by it. An app writing zeros as it lost the link would
+look identical from here.
+
+`0x1012` writes persist, and the two paths disagree on byte order — `0x1013` echoes
+what was stored while `0x1093` reports the pair reversed, so a value of 1 written as
+`01 00` comes back as `[00, 01]` on one path and `[01, 00]` on the other. It is not
+a profile selector: states `00`, `01`, `02` and `03` all reported the same gain
+curve.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
