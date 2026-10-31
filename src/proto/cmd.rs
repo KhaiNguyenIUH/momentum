@@ -294,9 +294,12 @@ pub fn name(cmd: u16) -> &'static str {
         REGISTER_FEATURE => "register_feature",
         0x0107 => "register_ack",
         // An error frame naming command 0x0000 in the core feature. Seen from a MOMENTUM 5
-        // in reply to a feature-4 getter (`0x080d` smart pause) that this generation does not
-        // implement: the numbering promises `0x098d`, and the firmware sends this instead.
-        // Named for what the bits say, not for a meaning it may not have.
+        // in place of the reply to `0x080d` — twice, both times when other getters were
+        // queried in the same run, never when it was the only command sent, and the same
+        // command answered `0x090d [01]` correctly every time it was sent alone. So this is
+        // the device being uncertain, not a statement about the command: an error frame seen
+        // once, in a batch, is not evidence. Re-send the command on its own before writing
+        // down a refusal.
         0x0180 => "core_error",
         GET_CHARGING => "get_charging",
         GET_BATTERY => "get_battery",
@@ -407,6 +410,10 @@ pub fn name(cmd: u16) -> &'static str {
         // on, and nothing at all from the app. Whether that is wear or simply the
         // unit being in use is not settled — see docs/PROTOCOL.md.
         0x0482 => "unit_state_push",
+        // The getter for the same value: `01` in case, `02` not on head, `03` on head.
+        // Payload byte 0 is the state; a second byte is used for the right side on earbuds
+        // and is absent here. (live)
+        0x0502 => "physical_state_reply",
         // Not stability. The name came from the published numbering and was never
         // checked; it moves with the audio stream instead — `02` at rest on a 44.1 kHz
         // link, `ff` for the moment the link is renegotiated, `08` while a phone

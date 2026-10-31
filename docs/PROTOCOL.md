@@ -13,6 +13,16 @@ claim. Nothing here is invented: an id that nobody has observed is labelled
 | **probable** | Documented for one MOMENTUM model; same Qualcomm GAIA family, not yet seen here. |
 | **probe** | Plausible id from the Qualcomm GAIA basic command set. Sent only on request; answer printed raw. |
 
+One rule the vocabulary does not cover, learned the hard way: **a refusal seen once, in a
+batch, is not evidence.** `momentum probe --cmd 080d,0603` produced `0x0180 [01]` in place
+of the smart-pause reply, twice, in either order — and `0x080d` sent on its own answered
+`0x090d [01]`, correctly, every time. The device is capable of returning a generic core
+error where a specific reply belongs, so a claim of the form "this command is not
+supported" needs the command sent alone, and ideally twice alone, before it is written
+down. Genuine refusals are distinguishable: they name the command they refuse, they carry a
+GAIA code with a meaning, and they repeat. `0x1015`–`0x1018` answer `0x11xx [01]` twice each
+however they are sent, which is why those are recorded as refused.
+
 ## Transport
 
 The control channel is **RFCOMM**, not Bluetooth LE. The headset publishes it as
@@ -1059,6 +1069,8 @@ MOMENTUM 5, firmware 6.21.1, and three of them explain things this document had 
 | sent | answer | read |
 | --- | --- | --- |
 | `0x0401` | `[01]` | **wear detection on** — the first direct read of it; the app's setting, now on the wire |
+| `0x0402` | `[02]` | physical state: `01` in case, `02` not on head, `03` on head. The same value `0x0482` pushes. (live, and it read `[02]` correctly with the headphones on a desk) |
+| `0x080d` | `[01]` | smart pause on — pause the stream when they come off. Sent alone; in a batch it was twice answered with the generic `0x0180`, see the rule at the top |
 | `0x0406` | `[00]` | Bluetooth compatibility mode 0 = *better audio*, i.e. **Hi-Res on** |
 | `0x0601 [00]` | `[00, 03, 84]` | **auto power-off timer 0 = 900 s** |
 | `0x0601 [01]` | `0x0781 [05]` | timer 1, limbo: refused with code `5` — the same refusal their M4 gives |
