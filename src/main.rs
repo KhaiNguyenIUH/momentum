@@ -843,7 +843,7 @@ fn steps(
         // A closed channel is how this experiment ends — the last step of the wear
         // script is switching the headset off — so it closes the transcript rather
         // than escaping as an error. Losing the peer is an outcome, not a fault.
-        let next = match momentum::Link::read_frame(&mut link, Duration::from_millis(150)) {
+        let polled = match momentum::Link::read_frame(&mut link, Duration::from_millis(150)) {
             Ok(next) => next,
             Err(momentum::Error::Disconnected) => {
                 say(&format!(
@@ -855,7 +855,7 @@ fn steps(
             }
             Err(err) => return Err(err.into()),
         };
-        if let Some(frame) = next {
+        if let Some(frame) = polled {
             since += 1;
             say(&format!(
                 "  t+{:6.1}s  << vendor 0x{:04x}  0x{:04x} {:<22} {:02x?}",
