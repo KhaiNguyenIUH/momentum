@@ -1,4 +1,4 @@
-﻿# The Sennheiser MOMENTUM control protocol, as measured
+# The Sennheiser MOMENTUM control protocol, as measured
 
 Notes on what this program sends and receives, and how certain we are of each
 claim. Nothing here is invented: an id that nobody has observed is labelled
@@ -932,6 +932,65 @@ not a switch.
 **The mechanism worth stealing whole**: read `0x1201` first and choose command shapes from
 the firmware version, before choosing payloads. Nearly every misreading in this document
 came from assuming one firmware's meaning for all firmwares.
+
+## The settings block, the paired-device list, and why the headset keeps going to sleep
+
+Their map predicted a dozen getters we had never asked for. All twelve answered on this
+MOMENTUM 5, firmware 6.21.1, and three of them explain things this document had given up on.
+
+| sent | answer | read |
+| --- | --- | --- |
+| `0x0401` | `[01]` | **wear detection on** — the first direct read of it; the app's setting, now on the wire |
+| `0x0406` | `[00]` | Bluetooth compatibility mode 0 = *better audio*, i.e. **Hi-Res on** |
+| `0x0601 [00]` | `[00, 03, 84]` | **auto power-off timer 0 = 900 s** |
+| `0x0601 [01]` | `0x0781 [05]` | timer 1, limbo: refused with code `5` — the same refusal their M4 gives |
+| `0x0802` | `[02]` | voice prompts: 0 off, 1 tones, 2 voice + tones → **voice and tones** |
+| `0x0806` | `[00]` | call sidetone 0 |
+| `0x0818` | `[00]` | low-latency mode off, the getter of the `0x0898` push we already received |
+| `0x081A` | `[00,00,00,00]` | **their inferred sample-rate getter is real** — not in Sennheiser's model, derived from the `0x089a` push, and it answers |
+| `0x0800` | `[ff]` | codec, as a value rather than a push: `ff` none |
+| `0x1200` | `[00,04, 00,00]` | hardware revision 4 |
+| `0x1202` | `[06,15,01, 00,00,00]` | component versions: **6.21.1**, then three unused |
+| `0x1607` | `[00]` | touch lock off, the getter of `0x1687` |
+| `0x1605` | `[01]` | the touch map is still the default |
+
+**The sleep was never a fault.** `0x0601 [00]` says the headset powers itself off after
+900 seconds of nothing — a quarter of an hour — which is exactly the pattern we kept
+hitting: an hour of probing, then `0x8007277C` on every channel, then it back after a press
+of the power button. The link state in every earlier experiment has been quietly conditioned
+by a timer we did not know we were racing.
+
+### Which hosts it remembers
+
+`0x1400` is a `u16`: **four** paired hosts. `0x1409` says it holds **two** connections at
+once, and `0x1407` says this PC is entry **0**. Reading the entries gives the names back as
+ASCII:
+
+```
+0x1401 [00] → 00, 00, 01, "DESKTOP-RJJ7468"     index 0, priority 0, status 1
+0x1401 [01] → 01, 01, 00, "Mi 11"               index 1, priority 1, status 0
+```
+
+Status `1` for the machine that is connected and `0` for the phone that is not, so the byte
+separates connected from merely paired — one observation of each value, so the rest of the
+states are unmapped. This answers a question the tool has been unable to ask since the
+beginning: *which hosts does this headset remember, which one is connected, and which one
+am I?*
+
+### The core feature list, decoded at last
+
+`0x0001` in the `0x001D` namespace has answered the same thirteen bytes for months under the
+note "layout not decoded". It is `moreData`, then `(feature, version)` pairs, six of them:
+
+```
+00 | 0d 01   0c 01   06 02   04 02   07 01   00 05
+```
+
+`0x0002` — *the rest, please* — answers `[00]`: there is no more. Note that this list omits
+feature `08`, the equaliser, and `02`, unit state, both of which demonstrably work. It is
+the **core Qualcomm** list, not Sennheiser's, and treating it as the product's complete
+feature set would be a mistake — but it is now a readable claim rather than fourteen
+mystery bytes.
 
 ## The Bluetooth LE side, for as far as Windows can see it
 
