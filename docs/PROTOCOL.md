@@ -615,6 +615,29 @@ eight bass-to-treble bands were already measured here; the command ids were inve
 in the confident shape of measured ids, and the table's formatting made them look like
 they came from somewhere.
 
+The same source went on to draw a wire packet: `FF AA 00 0B 1A 08 00 <8 bytes>`,
+labelled *magic sync head*, *data length (11)*, *command*, *sub-cmd*, *slot*, and
+offered a **checksum** to go with it. Compared with frames captured off the link,
+which the test suite asserts byte for byte:
+
+```
+FF 03 00 00 | 04 95 06 03                     get battery
+FF 03 00 01 | 04 95 00 07 03                  register feature 3
+FF 04 00 00 | 04 95 01 07                     its ack
+```
+
+- Byte 1 is the frame kind — `03` command, `04` response. `0xAA` has never appeared
+  anywhere on this link.
+- Byte 2 is a fixed `00`; byte 3 is a **one-byte** length counting only what follows
+  the eight-byte header. A bare query has length `00`, not `0B`.
+- **There is no vendor id in the drawn frame at all.** The two bytes after the length
+  are always the vendor — `04 95` Qualcomm, `00 1D` Sennheiser — and the command
+  follows them. A packet built to that template is not a wrong command, it is
+  structurally unreadable here, which also means the command ids it carries were
+  written without any frame to put them in.
+- No frame this device sends or accepts has ever contained a checksum, and the parser
+  resynchronises on `FF` without one.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
