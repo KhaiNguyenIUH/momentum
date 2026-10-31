@@ -737,7 +737,8 @@ const SCRIPTS: &[(&str, &[&str])] = &[
              table and does not disturb this one.)",
             "Take them OFF your head. Count ten seconds.",
             "Put them back ON your head. Count ten seconds.",
-            "Take them off and press the power button until they switch OFF.",
+            "Take them off and press the power button until they switch OFF. The listener \
+             ends by itself when they do — with `--out`, the transcript is already saved.",
         ],
     ),
     (
@@ -839,7 +840,22 @@ fn steps(
     say("listening. `q` then Enter quits at any time; frames are stamped from now.");
     instruct(0, &mut say);
     loop {
-        if let Some(frame) = momentum::Link::read_frame(&mut link, Duration::from_millis(150))? {
+        // A closed channel is how this experiment ends — the last step of the wear
+        // script is switching the headset off — so it closes the transcript rather
+        // than escaping as an error. Losing the peer is an outcome, not a fault.
+        let next = match momentum::Link::read_frame(&mut link, Duration::from_millis(150)) {
+            Ok(next) => next,
+            Err(momentum::Error::Disconnected) => {
+                say(&format!(
+                    "\nthe headset closed the channel during step {step} — expected when \
+                     the experiment ends by switching it off. {since} frame(s) were still \
+                     open in this step."
+                ));
+                break;
+            }
+            Err(err) => return Err(err.into()),
+        };
+        if let Some(frame) = next {
             since += 1;
             say(&format!(
                 "  t+{:6.1}s  << vendor 0x{:04x}  0x{:04x} {:<22} {:02x?}",
