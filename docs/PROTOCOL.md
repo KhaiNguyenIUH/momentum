@@ -548,6 +548,45 @@ response to registering feature `0x08` — table for table, byte for byte — an
 connection, nothing more. `--channel` stays in the tool because proving that required
 it, and because the next person to wonder deserves to answer it in one command.
 
+## The feature map
+
+`0x0007 REGISTER_FEATURE <id>` is how this device is read at all: it starts pushing
+its tables to the connection that asked, and the ones that refuse answer `05`
+instead of staying silent. Sweeping ids `01`–`1f` with `probe --features 01-1f` —
+registration asks for reports rather than changing settings, which is why walking the
+space this way is safe when firing unrecognised command ids is not — gives:
+
+| feature | answer | what registration pushes |
+| --- | --- | --- |
+| `01` | `05` refused | — |
+| `02` | ack | `0x0482 unit_state [03]` |
+| `03` | ack | `0x0682 charging`, `0x0683 battery` |
+| **`04`** | ack | **nine frames, all unexplained**: `0x0882 [02]`, `0x0884 [00,01]`, `0x0886 [00]`, `0x0880 stability [ff]`, `0x0896 [00,48]`, `0x0898 [00]`, `0x089a [00,00,00,00]`, `0x089d [00]`, `0x089e [ff,00,00,00,00]` |
+| `05`–`07` | `05` refused | — |
+| `08` | ack | the equaliser's seven tables |
+| `09`, `0a` | ack | nothing — subscribed to something that has no initial state |
+| `0b` | ack | `0x1687 [00]` |
+| `0c` | ack | `0x1885 transparency_on [00]` |
+| `0d` | ack | `0x1a85 anc`, `0x1a81 mode_list [01,00,03,00,02,00]`, `0x1a83 transparency_level [64]` |
+| `0e`, `0f` | `05` refused | — |
+| `10` | ack | `0x2081 [00]` |
+| `11`–`13` | `05` refused | — |
+| `14` | ack | nothing |
+| `15`–`1a` | `05` refused | — |
+| **`1b`** | ack | **`0x3681 [01,00]`, `0x3683 [00]`, `0x3685 [00]`** |
+| `1c`–`1f` | `05` refused | — |
+
+**Feature `0x04` is the one to look at.** Nine tables at once, in the `0x0800` command
+range, including a frame already named `stability_push` because that is what its id
+suggested and nothing since has confirmed it. Values like `0x0896 [00, 48]` and the
+five-byte `0x089e` look like measurements rather than switches. What they measure is
+unknown, and naming them after the guess would be exactly the mistake this document
+has already made twice.
+
+`09`, `0a` and `14` accept a subscription and report nothing, so there is something to
+query there with a command id rather than a registration — the next sweep, done the
+same careful way.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.

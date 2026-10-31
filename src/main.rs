@@ -209,6 +209,13 @@ enum Command {
         /// lists is used, which is what every measurement here was taken over.
         #[arg(long)]
         channel: Option<u32>,
+        /// Sweep feature registrations instead of single commands: a hex byte spec,
+        /// `01-1f` or `01,08,0a`. Registration is how this device is read at all —
+        /// it starts pushing its tables to whoever asked — and it asks for reports
+        /// rather than changing settings, which is why walking the command space
+        /// this way is safe and firing unrecognised ids with empty payloads is not.
+        #[arg(long)]
+        features: Option<String>,
     },
 }
 
@@ -279,6 +286,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             cmd,
             payload,
             channel,
+            features,
         } => Some(probe(
             *seconds,
             filter,
@@ -286,6 +294,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             cmd.as_deref(),
             payload,
             *channel,
+            features.as_deref(),
         )),
         _ => None,
     }
@@ -654,6 +663,31 @@ fn volume(level: Option<u8>, filter: &str, list: bool) -> Result<(), Boxed> {
 #[cfg(windows)]
 const SENNHEISER_VENDOR: u16 = 0x001D;
 
+/// Parse a hex byte spec: `01-0f`, `01,03,08`, or a single `08`. The sweep takes
+/// one because walking a span id by id is tedious enough that nobody would.
+#[cfg(windows)]
+fn byte_spec(text: &str) -> Result<Vec<u8>, Boxed> {
+    let mut out = Vec::new();
+    for part in text.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+        if let Some((lo, hi)) = part.split_once('-') {
+            let (lo, hi) = (
+                u8::from_str_radix(lo.trim(), 16)?,
+                u8::from_str_radix(hi.trim(), 16)?,
+            );
+            if lo > hi {
+                return Err(format!("{lo:02x}-{hi:02x} runs backwards").into());
+            }
+            out.extend(lo..=hi);
+        } else {
+            out.push(u8::from_str_radix(part, 16)?);
+        }
+    }
+    if out.is_empty() {
+        return Err("empty byte spec".into());
+    }
+    Ok(out)
+}
+
 /// Send read-only queries and print whatever answers.
 ///
 /// Every GAIA frame carries a vendor id, and a headset that does not own the
@@ -669,6 +703,7 @@ fn probe(
     cmd: Option<&str>,
     payload: &str,
     channel: Option<u32>,
+    features: Option<&str>,
 ) -> Result<(), Boxed> {
     use momentum::cmd::feature;
     use momentum::proto::frame::VENDOR_QUALCOMM;
@@ -676,7 +711,11 @@ fn probe(
     let mut link = connect_first(filter, false, channel)?.into_link();
 
     let mut probes: Vec<momentum::Frame> = Vec::new();
-    if let Some(text) = cmd {
+    if let Some(spec) = features {
+        for id in byte_spec(spec)? {
+            probes.push(command(VENDOR_QUALCOMM, momentum::cmd::REGISTER_FEATURE, vec![id]));
+        }
+    } else if let Some(text) = cmd {
         probes.push(command(
             parse_u16(vendor.unwrap_or("495"))?,
             parse_u16(text)?,
