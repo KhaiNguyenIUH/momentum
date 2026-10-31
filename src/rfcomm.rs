@@ -14,11 +14,11 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
 
-use windows::core::HSTRING;
 use windows::Devices::Bluetooth::Rfcomm::{RfcommDeviceService, RfcommServiceId};
 use windows::Devices::Enumeration::DeviceInformation;
 use windows::Networking::Sockets::StreamSocket;
 use windows::Storage::Streams::{DataWriter, IBuffer, InputStreamOptions};
+use windows::core::HSTRING;
 
 use crate::error::{Error, Result};
 use crate::link::Link;
@@ -50,7 +50,7 @@ macro_rules! await_sync {
             match op.Status()? {
                 code if code.0 == $crate::rfcomm::status::COMPLETED => break,
                 code if code.0 == $crate::rfcomm::status::CANCELED => {
-                    return Err($crate::error::Error::Disconnected)
+                    return Err($crate::error::Error::Disconnected);
                 }
                 code if code.0 == $crate::rfcomm::status::ERROR => {
                     let detail = match op.ErrorCode() {
@@ -79,7 +79,7 @@ pub struct RfcommTarget {
 /// Initialise WinRT on this thread. MTA is what a console worker wants, and an
 /// already-initialised thread is not an error.
 pub(crate) fn init_com() -> Result<()> {
-    use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+    use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
     match unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
         // S_OK: initialised here. S_FALSE is an "error" code that means this
         // thread was already initialised, which is fine.
@@ -435,7 +435,10 @@ impl Link for WindowsRfcomm {
             if remaining.is_zero() {
                 return Ok(None);
             }
-            match self.incoming.recv_timeout(remaining.min(Duration::from_millis(100))) {
+            match self
+                .incoming
+                .recv_timeout(remaining.min(Duration::from_millis(100)))
+            {
                 Ok(Ok(chunk)) => {
                     self.rx_bytes += chunk.len();
                     self.framer.push(&chunk);
@@ -496,7 +499,10 @@ mod tests {
         assert_eq!(channel("Bluetooth#x#RFCOMM:00000000:{abc}"), Some(0));
         assert_eq!(channel("nonsense"), None);
         assert_eq!(peer_address("no addresses here"), None);
-        assert!(!is_bd_addr("1234567890123456789"), "must be exactly 17 chars");
+        assert!(
+            !is_bd_addr("1234567890123456789"),
+            "must be exactly 17 chars"
+        );
     }
 
     #[test]

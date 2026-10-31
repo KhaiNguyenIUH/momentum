@@ -439,7 +439,10 @@ async fn run(command: Command) -> Result<(), Boxed> {
             notify,
         } => {
             let address = match address.as_deref() {
-                Some(text) => Some(text.parse::<BDAddr>().map_err(|e| format!("bad address {text}: {e}"))?),
+                Some(text) => Some(
+                    text.parse::<BDAddr>()
+                        .map_err(|e| format!("bad address {text}: {e}"))?,
+                ),
                 None => None,
             };
             gatt(address, &filter, seconds, no_read, notify).await
@@ -463,7 +466,11 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
         Command::Host { serve, name } => Some(host(*serve, name)),
-        Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
+        Command::Watch {
+            seconds,
+            filter,
+            raw,
+        } => Some(watch(*seconds, filter, *raw)),
         Command::Audio { seconds, filter } => Some(audio(*seconds, filter)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -474,7 +481,13 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             list,
         } => Some(volume(*level, filter, *list)),
         Command::Mute { state, filter } => Some(mute(state.as_deref(), filter)),
-        Command::Steps { features, channel, out, script, filter } => Some(steps(
+        Command::Steps {
+            features,
+            channel,
+            out,
+            script,
+            filter,
+        } => Some(steps(
             features,
             filter,
             *channel,
@@ -508,7 +521,11 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
 fn rf_scan(filter: &str, uuid: Option<&str>) -> Result<(), Boxed> {
     use momentum::rfcomm;
     let uuid = uuid.unwrap_or(momentum::GAIA_SERVICE_UUID);
-    let needle = if filter.is_empty() { None } else { Some(filter) };
+    let needle = if filter.is_empty() {
+        None
+    } else {
+        Some(filter)
+    };
     let targets = rfcomm::find(uuid, needle)?;
     if targets.is_empty() {
         println!("no paired device publishes RFCOMM service {uuid}");
@@ -533,9 +550,7 @@ fn rf_scan(filter: &str, uuid: Option<&str>) -> Result<(), Boxed> {
 /// Windows lists one entry per resolved channel, and the headset accepts only
 /// some of them depending on its state, so candidates are tried in turn.
 #[cfg(windows)]
-fn open_session(
-    filter: &str,
-) -> Result<momentum::Session<momentum::rfcomm::WindowsRfcomm>, Boxed> {
+fn open_session(filter: &str) -> Result<momentum::Session<momentum::rfcomm::WindowsRfcomm>, Boxed> {
     connect_first(filter, true, None)
 }
 
@@ -551,7 +566,11 @@ fn connect_first(
     register: bool,
     only: Option<u32>,
 ) -> Result<momentum::Session<momentum::rfcomm::WindowsRfcomm>, Boxed> {
-    let needle = if filter.is_empty() { None } else { Some(filter) };
+    let needle = if filter.is_empty() {
+        None
+    } else {
+        Some(filter)
+    };
     let found = momentum::rfcomm::find(momentum::GAIA_SERVICE_UUID, needle)?;
     if found.is_empty() {
         return Err(format!(
@@ -596,10 +615,7 @@ fn connect_first(
         let mut session = momentum::Session::new(link);
         if register && let Err(err) = session.open(&momentum::DEFAULT_FEATURES) {
             println!("  no reply: {err}");
-            println!(
-                "  link: {}",
-                momentum::Link::diagnostics(session.link())
-            );
+            println!("  link: {}", momentum::Link::diagnostics(session.link()));
             last_error = Some(err);
             continue;
         }
@@ -644,18 +660,15 @@ fn eq_set(
     kind: Option<u8>,
     hold: Option<u64>,
     filter: &str,
-) -> Result<(), Boxed> {    if gain.is_none() && freq.is_none() && q.is_none() && kind.is_none() {
+) -> Result<(), Boxed> {
+    if gain.is_none() && freq.is_none() && q.is_none() && kind.is_none() {
         return Err("nothing to change: give --gain, --freq, --q or --type".into());
     }
-    if let Some(hz) = freq {
-        if !(10..=24000).contains(&hz) {
-            return Err(format!("{hz} Hz is outside 10..24000").into());
-        }
+    if let Some(hz) = freq.filter(|hz| !(10..=24000).contains(hz)) {
+        return Err(format!("{hz} Hz is outside 10..24000").into());
     }
-    if let Some(raw_q) = q {
-        if !raw_q.is_finite() || !(0.05..=16.0).contains(&raw_q) {
-            return Err(format!("{raw_q} is not a Q between 0.05 and 16").into());
-        }
+    if let Some(raw_q) = q.filter(|raw_q| !raw_q.is_finite() || !(0.05..=16.0).contains(raw_q)) {
+        return Err(format!("{raw_q} is not a Q between 0.05 and 16").into());
     }
     let tenths = match gain {
         Some(db) => {
@@ -784,7 +797,9 @@ fn eq_param(
     let mut session = open_session(filter)?;
     let bands = session.equaliser()?.bands();
     if usize::from(band) >= bands {
-        return Err(format!("this equaliser describes {bands} bands, so there is no band {band}").into());
+        return Err(
+            format!("this equaliser describes {bands} bands, so there is no band {band}").into(),
+        );
     }
     if wide {
         session.eq_set_u16(command, band, value)?;
@@ -853,7 +868,10 @@ fn apply_bands(
 
 #[cfg(windows)]
 fn print_bands(bands: &[Band]) {
-    println!("{:<5} {:>7}  {:>7}  {:>5}  {:>7}", "band", "Hz", "Q", "type", "dB");
+    println!(
+        "{:<5} {:>7}  {:>7}  {:>5}  {:>7}",
+        "band", "Hz", "Q", "type", "dB"
+    );
     for (index, band) in bands.iter().enumerate() {
         println!(
             "{:<5} {:>7}  {:>7.3}  {:>5}  {:>+7.1}",
@@ -959,28 +977,40 @@ fn eq_tune(filter: &str) -> Result<(), Boxed> {
                             let tenths = (db * 10.0).round() as i8;
                             session
                                 .eq_set_u8(cmd::SET_EQ_GAIN, band, tenths as u8)
-                                .map(|()| Band { tenths, ..current[usize::from(band)] })
+                                .map(|()| Band {
+                                    tenths,
+                                    ..current[usize::from(band)]
+                                })
                         }
                         ("f", Ok(hz)) if (10.0..=24000.0).contains(&hz) => {
                             let hz = hz.round() as u16;
                             session
                                 .eq_set_u16(cmd::SET_EQ_FREQUENCY, band, hz)
-                                .map(|()| Band { hz, ..current[usize::from(band)] })
+                                .map(|()| Band {
+                                    hz,
+                                    ..current[usize::from(band)]
+                                })
                         }
                         ("q", Ok(q)) if (0.05..=16.0).contains(&q) => {
                             let raw = (q * 4096.0).round() as u16;
-                            session
-                                .eq_set_u16(cmd::SET_EQ_Q, band, raw)
-                                .map(|()| Band { q: raw, ..current[usize::from(band)] })
+                            session.eq_set_u16(cmd::SET_EQ_Q, band, raw).map(|()| Band {
+                                q: raw,
+                                ..current[usize::from(band)]
+                            })
                         }
                         ("t", Ok(kind)) if (0.0..=255.0).contains(&kind) => {
                             let kind = kind as u8;
                             session
                                 .eq_set_u8(cmd::SET_EQ_FILTER_TYPE, band, kind)
-                                .map(|()| Band { kind: kind as u16, ..current[usize::from(band)] })
+                                .map(|()| Band {
+                                    kind: kind as u16,
+                                    ..current[usize::from(band)]
+                                })
                         }
                         (_, Ok(_)) => {
-                            println!("out of range: dB within ±12.7 here, Hz 10..24000, Q 0.05..16, type 0..255");
+                            println!(
+                                "out of range: dB within ±12.7 here, Hz 10..24000, Q 0.05..16, type 0..255"
+                            );
                             continue;
                         }
                         _ => {
@@ -1024,7 +1054,9 @@ fn parse_mode(raw: &str) -> Result<u8, String> {
         return if number <= 5 {
             Ok(number)
         } else {
-            Err(format!("{number} is outside the 0..5 the app's enumeration defines"))
+            Err(format!(
+                "{number} is outside the 0..5 the app's enumeration defines"
+            ))
         };
     }
     match raw.to_ascii_lowercase().as_str() {
@@ -1043,14 +1075,11 @@ fn parse_mode(raw: &str) -> Result<u8, String> {
 
 /// Print a mode payload — two bytes big-endian — as the number and the name.
 fn mode_text(payload: &[u8]) -> String {
-    let raw = u16::from_be_bytes([payload.first().copied().unwrap_or(0), payload.get(1).copied().unwrap_or(0)]);
-    let mode = u8::try_from(raw).map_or(255, |small| {
-        if small <= 5 {
-            small
-        } else {
-            255
-        }
-    });
+    let raw = u16::from_be_bytes([
+        payload.first().copied().unwrap_or(0),
+        payload.get(1).copied().unwrap_or(0),
+    ]);
+    let mode = u8::try_from(raw).map_or(255, |small| if small <= 5 { small } else { 255 });
     format!("{raw} ({})", mode_name(mode))
 }
 
@@ -1068,12 +1097,16 @@ fn audio_mode(mode: Option<u8>, filter: &str) -> Result<(), Boxed> {
             // The device reports this mode as already active when it is already active,
             // so silence here means the mode was already what you asked for.
             if want == 4 {
-                println!("this firmware accepts mode 4 and sits in it; no parametric parameter \
+                println!(
+                    "this firmware accepts mode 4 and sits in it; no parametric parameter \
                           store has been found on the wire, and no ear has attributed any change \
-                          of sound to entering it.");
+                          of sound to entering it."
+                );
             }
             if want != 1 {
-                println!("the user equaliser is not heard in this mode — the curve stays stored and silent.");
+                println!(
+                    "the user equaliser is not heard in this mode — the curve stays stored and silent."
+                );
             }
         }
         // `already` arrives as an error frame, which is information rather than failure.
@@ -1145,18 +1178,17 @@ fn print_bank(eq: &momentum::proto::state::Equaliser) {
     use momentum::APP_BANDS_HZ;
 
     let cell = |row: &[Option<u16>], band: usize| {
-        row.get(band).copied().flatten().map_or_else(
-            || "-".to_string(),
-            |value| value.to_string(),
-        )
+        row.get(band)
+            .copied()
+            .flatten()
+            .map_or_else(|| "-".to_string(), |value| value.to_string())
     };
     let db = eq.gains_db();
     let q = |band: usize| {
-        eq.q12
-            .get(band)
-            .copied()
-            .flatten()
-            .map_or_else(|| "-".to_string(), |raw| format!("{:.3}", f64::from(raw) / 4096.0))
+        eq.q12.get(band).copied().flatten().map_or_else(
+            || "-".to_string(),
+            |raw| format!("{:.3}", f64::from(raw) / 4096.0),
+        )
     };
     // Two frequency columns, because the two disagree and nothing on the wire says
     // which one the sliders are named after. The write commands take the band **index**,
@@ -1209,10 +1241,10 @@ fn eq_show(filter: &str, raw: bool) -> Result<(), Boxed> {
         // Raw hex next to the decimal: an unexplained number is worth keeping exactly as
         // the device sent it, not as an interpretation of it.
         let hexed = |row: &[Option<u16>], at: usize| {
-            row.get(at).copied().flatten().map_or_else(
-                || "-".to_string(),
-                |v| format!("{v:#06x} ({v})"),
-            )
+            row.get(at)
+                .copied()
+                .flatten()
+                .map_or_else(|| "-".to_string(), |v| format!("{v:#06x} ({v})"))
         };
         // Stored signed — `0x1010` accepted −180 and refused −182, so two's complement is
         // a fact about representation, not a guess about units. Printing 65526 for what
@@ -1363,10 +1395,7 @@ fn watch(seconds: u64, filter: &str, raw: bool) -> Result<(), Boxed> {
                 }
             }
         }
-        println!(
-            "link: {}",
-            momentum::Link::diagnostics(&link)
-        );
+        println!("link: {}", momentum::Link::diagnostics(&link));
         return Ok(());
     }
 
@@ -1466,7 +1495,11 @@ const SENNHEISER_VENDOR: u16 = 0x001D;
 #[cfg(windows)]
 fn byte_spec(text: &str) -> Result<Vec<u8>, Boxed> {
     let mut out = Vec::new();
-    for part in text.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in text
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         if let Some((lo, hi)) = part.split_once('-') {
             let (lo, hi) = (
                 u8::from_str_radix(lo.trim(), 16)?,
@@ -1588,7 +1621,11 @@ fn steps(
             .ok_or_else(|| {
                 format!(
                     "no script called {name}. there are: {}",
-                    SCRIPTS.iter().map(|(named, _)| *named).collect::<Vec<_>>().join(", ")
+                    SCRIPTS
+                        .iter()
+                        .map(|(named, _)| *named)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
             })?,
     };
@@ -1658,7 +1695,10 @@ fn steps(
             since = 0;
         }
     }
-    say(&format!("quit after {step} step(s); {}", momentum::Link::diagnostics(&link)));
+    say(&format!(
+        "quit after {step} step(s); {}",
+        momentum::Link::diagnostics(&link)
+    ));
     Ok(())
 }
 
@@ -1750,7 +1790,8 @@ fn probe(request: &ProbeRequest<'_>) -> Result<(), Boxed> {
         }
         let settle = Instant::now() + Duration::from_millis(700);
         while Instant::now() < settle {
-            if let Some(frame) = momentum::Link::read_frame(&mut link, Duration::from_millis(100))? {
+            if let Some(frame) = momentum::Link::read_frame(&mut link, Duration::from_millis(100))?
+            {
                 println!(
                     "   its tables: 0x{:04x} {:<22} {:02x?}",
                     frame.cmd,
@@ -1764,7 +1805,11 @@ fn probe(request: &ProbeRequest<'_>) -> Result<(), Boxed> {
     let mut probes: Vec<momentum::Frame> = Vec::new();
     if let Some(spec) = features {
         for id in byte_spec(spec)? {
-            probes.push(command(VENDOR_QUALCOMM, momentum::cmd::REGISTER_FEATURE, vec![id]));
+            probes.push(command(
+                VENDOR_QUALCOMM,
+                momentum::cmd::REGISTER_FEATURE,
+                vec![id],
+            ));
         }
     } else if let Some(text) = cmd {
         let vendor = parse_u16(vendor.unwrap_or("495"))?;
@@ -1851,7 +1896,11 @@ fn parse_u16(text: &str) -> Result<u16, Boxed> {
 #[cfg(windows)]
 fn parse_u16_spec(text: &str) -> Result<Vec<u16>, Boxed> {
     let mut out = Vec::new();
-    for part in text.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in text
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         if let Some((lo, hi)) = part.split_once('-') {
             let (lo, hi) = (parse_u16(lo)?, parse_u16(hi)?);
             if lo > hi {
@@ -1916,7 +1965,10 @@ const RAMP_FLAT: [i16; 8] = [0; 8];
 fn ramp(filter: &str, wanted: &[i16; 8]) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let eq = session.set_eq_gains_wide(wanted)?;
-    println!("{:<5} {:>8}  {:>8}  {:>6}", "band", "wrote/dB", "read/dB", "stuck?");
+    println!(
+        "{:<5} {:>8}  {:>8}  {:>6}",
+        "band", "wrote/dB", "read/dB", "stuck?"
+    );
     let mut all = true;
     for (band, want) in wanted.iter().enumerate() {
         let got = eq.gains_wide.get(band).copied().flatten().map(|v| v as i16);
@@ -1953,7 +2005,10 @@ async fn adapters() -> Result<Vec<Adapter>, Boxed> {
     let manager = Manager::new().await?;
     let list = manager.adapters().await?;
     if list.is_empty() {
-        return Err("no Bluetooth adapter found: is the radio on and Windows' Bluetooth service running?".into());
+        return Err(
+            "no Bluetooth adapter found: is the radio on and Windows' Bluetooth service running?"
+                .into(),
+        );
     }
     Ok(list)
 }
@@ -2008,7 +2063,12 @@ async fn select(
             }
             continue;
         }
-        if properties.local_name.unwrap_or_default().to_lowercase().contains(&needle) {
+        if properties
+            .local_name
+            .unwrap_or_default()
+            .to_lowercase()
+            .contains(&needle)
+        {
             matches.push(peripheral);
         }
     }
@@ -2025,7 +2085,11 @@ async fn select(
         count => {
             eprintln!("several devices match \"{filter}\", pick one with --address:");
             for peripheral in &matches {
-                println!("  {} {}", address_of(peripheral).await, name_of(peripheral).await);
+                println!(
+                    "  {} {}",
+                    address_of(peripheral).await,
+                    name_of(peripheral).await
+                );
             }
             Err(format!("{count} devices matched").into())
         }
@@ -2082,7 +2146,11 @@ async fn gatt(
     notify: Option<u64>,
 ) -> Result<(), Boxed> {
     let peripheral = select(discover(seconds).await?, address, filter).await?;
-    let label = format!("{} {}", address_of(&peripheral).await, name_of(&peripheral).await);
+    let label = format!(
+        "{} {}",
+        address_of(&peripheral).await,
+        name_of(&peripheral).await
+    );
 
     let we_connected = if peripheral.is_connected().await? {
         false
@@ -2102,10 +2170,18 @@ async fn gatt(
         println!(
             "\nservice {} [{}]",
             service.uuid,
-            if service.primary { "primary" } else { "included" }
+            if service.primary {
+                "primary"
+            } else {
+                "included"
+            }
         );
         for characteristic in &service.characteristics {
-            print!("  {} {}", characteristic.uuid, flags(&characteristic.properties));
+            print!(
+                "  {} {}",
+                characteristic.uuid,
+                flags(&characteristic.properties)
+            );
             if !no_read && characteristic.properties.contains(CharPropFlags::READ) {
                 match peripheral.read(characteristic).await {
                     Ok(value) => print!(" = {}{}", hex(&value), annotate(&value)),
@@ -2165,7 +2241,10 @@ fn flags(properties: &CharPropFlags) -> String {
     };
     push(properties.contains(CharPropFlags::READ), "r");
     push(properties.contains(CharPropFlags::WRITE), "w");
-    push(properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE), "nw");
+    push(
+        properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE),
+        "nw",
+    );
     push(properties.contains(CharPropFlags::NOTIFY), "N");
     push(properties.contains(CharPropFlags::INDICATE), "I");
     out.push(']');

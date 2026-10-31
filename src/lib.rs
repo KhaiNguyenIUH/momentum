@@ -26,10 +26,10 @@
 //! noise.
 
 pub mod error;
-pub mod link;
-pub mod proto;
 #[cfg(windows)]
 pub mod host;
+pub mod link;
+pub mod proto;
 #[cfg(windows)]
 pub mod rfcomm;
 pub mod session;

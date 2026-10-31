@@ -16,9 +16,7 @@ use std::time::{Duration, Instant};
 use crate::error::{Error, Result};
 use crate::link::Link;
 use crate::proto::cmd;
-use crate::proto::frame::{
-    Frame, VENDOR_QUALCOMM, VENDOR_SENNHEISER,
-};
+use crate::proto::frame::{Frame, VENDOR_QUALCOMM, VENDOR_SENNHEISER};
 use crate::proto::state::{DeviceState, Equaliser, Event};
 
 /// How long to wait for a reply before giving up. The headset answers in
@@ -173,8 +171,7 @@ impl<L: Link> Session<L> {
     /// swallowed: a firmware that does not implement a label is not a reason to
     /// fail a status read.
     fn read_label(&mut self, command: u16) -> Result<()> {
-        if let Err(err) =
-            self.request_vendor(VENDOR_SENNHEISER, command, [], DEFAULT_TIMEOUT)
+        if let Err(err) = self.request_vendor(VENDOR_SENNHEISER, command, [], DEFAULT_TIMEOUT)
             && !matches!(err, Error::Refused(_))
         {
             return Err(err);
@@ -279,7 +276,9 @@ impl<L: Link> Session<L> {
 
     /// The audio mode as the device reports it: two bytes, big-endian.
     pub fn audio_mode(&mut self) -> Result<Vec<u8>> {
-        Ok(self.request(cmd::GET_AUDIO_MODE, [], DEFAULT_TIMEOUT)?.payload)
+        Ok(self
+            .request(cmd::GET_AUDIO_MODE, [], DEFAULT_TIMEOUT)?
+            .payload)
     }
 
     /// Select the audio mode and read it back.
@@ -299,7 +298,8 @@ impl<L: Link> Session<L> {
     }
 
     /// Write a value, then read it back so callers see confirmed state.
-    fn set_and_confirm(&mut self, command: u16, value: u8, confirm: u16) -> Result<Event> {        self.request(command, [value], DEFAULT_TIMEOUT)?;
+    fn set_and_confirm(&mut self, command: u16, value: u8, confirm: u16) -> Result<Event> {
+        self.request(command, [value], DEFAULT_TIMEOUT)?;
         let reply = self.request(confirm, [], DEFAULT_TIMEOUT)?;
         Ok(Event::decode(&reply))
     }
@@ -475,7 +475,10 @@ mod tests {
     fn set_anc_reads_the_value_back_instead_of_trusting_the_ack() {
         // The script: ack of the set (empty, carries no state), then the reply
         // to the follow-up query.
-        let link = MockLink::replaying([reply(cmd::reply_to(cmd::SET_ANC), &[]), reply(0x1B05, &[0x01])]);
+        let link = MockLink::replaying([
+            reply(cmd::reply_to(cmd::SET_ANC), &[]),
+            reply(0x1B05, &[0x01]),
+        ]);
         let mut session = Session::new(link);
         let event = session.set_anc(true).expect("set succeeds");
         assert_eq!(event, Event::Anc(true));
@@ -490,7 +493,8 @@ mod tests {
     #[test]
     fn pushes_arriving_mid_request_are_not_dropped() {
         // Battery push lands between our query and its reply.
-        let link = MockLink::replaying([reply(0x0683, &[0x50, 0x50, 0x3C]), reply(0x1B05, &[0x00])]);
+        let link =
+            MockLink::replaying([reply(0x0683, &[0x50, 0x50, 0x3C]), reply(0x1B05, &[0x00])]);
         let mut session = Session::new(link);
         session
             .request(cmd::GET_ANC, [], DEFAULT_TIMEOUT)
@@ -542,7 +546,9 @@ mod tests {
         // assumed absent on this firmware.
         let link = MockLink::replaying([reply(0x1B05, &[0x01])]);
         let mut session = Session::new(link);
-        session.refresh().expect("refresh survives missing commands");
+        session
+            .refresh()
+            .expect("refresh survives missing commands");
         assert_eq!(
             session.state.anc,
             Some(true),
@@ -569,7 +575,10 @@ mod tests {
     #[test]
     fn pump_reports_pushes_and_idle_separately() {
         let mut session = Session::new(MockLink::replaying([reply(0x1A85, &[0x01])]));
-        assert_eq!(session.pump(DEFAULT_TIMEOUT).unwrap(), Some(Event::Anc(true)));
+        assert_eq!(
+            session.pump(DEFAULT_TIMEOUT).unwrap(),
+            Some(Event::Anc(true))
+        );
         assert_eq!(session.pump(DEFAULT_TIMEOUT).unwrap(), None);
         assert_eq!(session.state.anc, Some(true));
     }

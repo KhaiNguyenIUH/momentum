@@ -110,7 +110,9 @@ pub fn probe(uuid: &str) -> Result<String> {
     let operation = RfcommServiceProvider::CreateAsync(&id)
         .map_err(|e| refused("CreateAsync — can this PC host an RFCOMM service", e))?;
     settle(&operation, "CreateAsync")?;
-    let provider = operation.GetResults().map_err(|e| refused("GetResults", e))?;
+    let provider = operation
+        .GetResults()
+        .map_err(|e| refused("GetResults", e))?;
     let back = provider
         .ServiceId()
         .and_then(|id| id.Uuid())
@@ -151,10 +153,12 @@ pub fn serve(options: &Serve) -> Result<()> {
     println!("{}.", adapter_summary());
     let id = service_id(GAIA_SERVICE_UUID)?;
     let provider = {
-        let operation = RfcommServiceProvider::CreateAsync(&id)
-            .map_err(|e| refused("CreateAsync", e))?;
+        let operation =
+            RfcommServiceProvider::CreateAsync(&id).map_err(|e| refused("CreateAsync", e))?;
         settle(&operation, "CreateAsync")?;
-        operation.GetResults().map_err(|e| refused("GetResults", e))?
+        operation
+            .GetResults()
+            .map_err(|e| refused("GetResults", e))?
     };
 
     let listener = StreamSocketListener::new().map_err(|e| refused("listener", e))?;
@@ -219,8 +223,12 @@ pub fn serve(options: &Serve) -> Result<()> {
 
 /// Read frames from one client and answer them, until the client goes away.
 fn talk(socket: &StreamSocket, options: &Serve) -> Result<()> {
-    let input = socket.InputStream().map_err(|e| refused("InputStream", e))?;
-    let output = socket.OutputStream().map_err(|e| refused("OutputStream", e))?;
+    let input = socket
+        .InputStream()
+        .map_err(|e| refused("InputStream", e))?;
+    let output = socket
+        .OutputStream()
+        .map_err(|e| refused("OutputStream", e))?;
     let reader = DataReader::CreateDataReader(&input).map_err(|e| refused("DataReader", e))?;
     let writer = DataWriter::CreateDataWriter(&output).map_err(|e| refused("DataWriter", e))?;
     // Without this, LoadAsync waits for a whole buffer and a six-byte frame would
@@ -232,7 +240,9 @@ fn talk(socket: &StreamSocket, options: &Serve) -> Result<()> {
     let mut framer = crate::proto::frame::Framer::new();
     let started = Instant::now();
     loop {
-        let load = reader.LoadAsync(4096).map_err(|e| refused("LoadAsync", e))?;
+        let load = reader
+            .LoadAsync(4096)
+            .map_err(|e| refused("LoadAsync", e))?;
         settle(&load, "LoadAsync")?;
         let read = load.GetResults().map_err(|e| refused("LoadAsync", e))?;
         if read == 0 {

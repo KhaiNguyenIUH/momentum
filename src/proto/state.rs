@@ -128,7 +128,10 @@ impl Equaliser {
     /// rather than the ±60 this scale implies for a ±6 dB slider, so it is not
     /// covered by it and is deliberately not converted.
     pub fn gains_db(&self) -> Vec<f32> {
-        self.gains.iter().map(|&gain| f32::from(gain) / 10.0).collect()
+        self.gains
+            .iter()
+            .map(|&gain| f32::from(gain) / 10.0)
+            .collect()
     }
 
     /// True when no table has arrived, which is how a caller tells "flat" from
@@ -212,7 +215,9 @@ impl Event {
             c if c == cmd::reply_to(cmd::REGISTER_FEATURE) => {
                 Event::FeatureRegistered(frame.payload.first().copied().unwrap_or(0))
             }
-            c if c == cmd::reply_to(cmd::GET_BATTERY) || c == cmd::notification_of(cmd::GET_BATTERY) => {
+            c if c == cmd::reply_to(cmd::GET_BATTERY)
+                || c == cmd::notification_of(cmd::GET_BATTERY) =>
+            {
                 Event::Battery(Battery::from_payload(&frame.payload))
             }
             c if c == cmd::reply_to(cmd::GET_CHARGING)
@@ -220,14 +225,12 @@ impl Event {
             {
                 Event::Charging(Charging::from_payload(&frame.payload))
             }
-            c if c == cmd::reply_to(cmd::GET_ANC)
-                || c == cmd::notification_of(cmd::GET_ANC) =>
-            {
+            c if c == cmd::reply_to(cmd::GET_ANC) || c == cmd::notification_of(cmd::GET_ANC) => {
                 Event::Anc(flag(&frame.payload))
             }
-            cmd::PUSH_TRANSPARENCY_LEVEL => Event::TransparencyLevel(
-                frame.payload.first().copied().unwrap_or(0),
-            ),
+            cmd::PUSH_TRANSPARENCY_LEVEL => {
+                Event::TransparencyLevel(frame.payload.first().copied().unwrap_or(0))
+            }
             cmd::PUSH_TRANSPARENCY_ON => Event::TransparencyOn(flag(&frame.payload)),
             c if c == cmd::reply_to(cmd::GET_TRANSPARENCY_LEVEL) => {
                 Event::TransparencyLevel(frame.payload.first().copied().unwrap_or(0))
@@ -264,22 +267,16 @@ impl Event {
             c if c == cmd::PUSH_EQ_GAINS || c == cmd::reply_to(cmd::GET_EQ_GAINS) => {
                 Event::EqGains(frame.payload.iter().map(|&b| b as i8).collect())
             }
-            c if c == cmd::PUSH_EQ_FREQUENCY
-                || c == cmd::reply_to(cmd::GET_EQ_FREQUENCY) =>
-            {
+            c if c == cmd::PUSH_EQ_FREQUENCY || c == cmd::reply_to(cmd::GET_EQ_FREQUENCY) => {
                 Event::EqRow100b(rows(&frame.payload, 2))
             }
-            c if c == cmd::PUSH_EQ_BAND_VALUE
-                || c == cmd::reply_to(cmd::GET_EQ_BAND_VALUE) =>
-            {
+            c if c == cmd::PUSH_EQ_BAND_VALUE || c == cmd::reply_to(cmd::GET_EQ_BAND_VALUE) => {
                 Event::EqBandValues(rows(&frame.payload, 2))
             }
             c if c == cmd::PUSH_EQ_LIMIT || c == cmd::reply_to(cmd::GET_EQ_LIMIT) => {
                 Event::EqLimits(rows(&frame.payload, 1))
             }
-            c if c == cmd::PUSH_EQ_GAIN_WIDE
-                || c == cmd::reply_to(cmd::GET_EQ_GAIN_WIDE) =>
-            {
+            c if c == cmd::PUSH_EQ_GAIN_WIDE || c == cmd::reply_to(cmd::GET_EQ_GAIN_WIDE) => {
                 Event::EqGainsWide(rows(&frame.payload, 2))
             }
             c if c == cmd::PUSH_EQ_STATE || c == cmd::reply_to(cmd::GET_EQ_STATE) => {
@@ -602,7 +599,11 @@ mod tests {
         assert_eq!(state.mode(), Mode::Anc);
 
         state.apply(&Event::TransparencyLevel(100));
-        assert_eq!(state.anc, Some(true), "anc must survive transparency pushes");
+        assert_eq!(
+            state.anc,
+            Some(true),
+            "anc must survive transparency pushes"
+        );
         assert_eq!(state.mode(), Mode::Transparency);
 
         state.apply(&Event::TransparencyLevel(0));
@@ -746,7 +747,11 @@ mod tests {
             Some(14),
             "rows land at the index the headset named"
         );
-        assert_eq!(state.eq.filter_types.len(), 2, "only two limit rows were sent");
+        assert_eq!(
+            state.eq.filter_types.len(),
+            2,
+            "only two limit rows were sent"
+        );
         assert_eq!(
             state.eq.filter_types.get(7),
             None,

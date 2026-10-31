@@ -14,12 +14,12 @@
 use std::thread;
 use std::time::Duration;
 
-use windows::core::{GUID, PCWSTR};
 use windows::Devices::Enumeration::{DeviceClass, DeviceInformation};
 use windows::Media::Devices::{AudioDeviceRole, MediaDevice};
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::IMMDeviceEnumerator;
-use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+use windows::core::{GUID, PCWSTR};
 
 use crate::error::{Error, Result};
 use crate::rfcomm::{init_com, status};
@@ -123,7 +123,9 @@ pub fn endpoints() -> Result<Vec<Endpoint>> {
         match finder.Status()? {
             code if code.0 == status::COMPLETED => break,
             code if code.0 == status::CANCELED || code.0 == status::ERROR => {
-                return Err(Error::Audio("Windows would not list its audio devices".into()));
+                return Err(Error::Audio(
+                    "Windows would not list its audio devices".into(),
+                ));
             }
             _ => thread::sleep(Duration::from_millis(1)),
         }
