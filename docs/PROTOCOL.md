@@ -718,6 +718,16 @@ is set by codec negotiation, not by the file, and whether the resampling happens
 Windows or in the headphone is not visible on this channel — a distinction the tool
 used to erase by printing "the headset is decoding 44100 Hz".
 
+Nor can it be probed from this PC. The output format Windows offers this device is, in
+its own words, *1 channel, 16 bit, 44100 Hz* or *2 channels, 16 bit, 44100 Hz* — the
+inbox Microsoft A2DP driver exposes no 48 kHz mode and no codec choice at all, so there
+is no way to move the mix format and watch `0x089a` follow it. The mirroring is inferred
+from one matched pair plus the phone's 48 kHz under aptX Adaptive, not demonstrated. What
+is demonstrated is the ceiling: 44.1 kHz and 16 bits out of Windows, into a 16-bit codec,
+whatever the file claims. Any claim about high-resolution playback over Bluetooth on this
+machine has to go through different silicon or a different stack, not through these
+settings.
+
 **Ruled out by the same run:** none of it is volume. The Windows slider for the
 headphones moved from 20 % to 40 % and back with the headphones as the default output,
 and the phone's own volume moved as well, with **no frame at all** in reply. `0x0896`,
