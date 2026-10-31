@@ -201,6 +201,11 @@ enum Command {
         /// Payload bytes as hex pairs, space or comma separated. Only with --cmd.
         #[arg(long, default_value = "")]
         payload: String,
+        /// RFCOMM server channel to dial, e.g. 1. This headset publishes the
+        /// control service on two channels; without this the first one the OS
+        /// lists is used, which is what every measurement here was taken over.
+        #[arg(long)]
+        channel: Option<u32>,
     },
 }
 
@@ -270,12 +275,14 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             vendor,
             cmd,
             payload,
+            channel,
         } => Some(probe(
             *seconds,
             filter,
             vendor.as_deref(),
             cmd.as_deref(),
             payload,
+            *channel,
         )),
         _ => None,
     }
@@ -313,20 +320,24 @@ fn rf_scan(filter: &str, uuid: Option<&str>) -> Result<(), Boxed> {
 fn open_session(
     filter: &str,
 ) -> Result<momentum::Session<momentum::rfcomm::WindowsRfcomm>, Boxed> {
-    connect_first(filter, true)
+    connect_first(filter, true, None)
 }
 
 /// Connect to the first channel that answers. `register` decides whether to
 /// hand the headset a feature registration and wait for its ack, which is what
-/// a real session needs and a passive listener must not do.
+/// a real session needs and a passive listener must not do. `only` pins the
+/// attempt to one RFCOMM server channel: this headset publishes the same service
+/// on two of them, and everything ever measured here went to whichever the OS
+/// happened to list first.
 #[cfg(windows)]
 fn connect_first(
     filter: &str,
     register: bool,
+    only: Option<u32>,
 ) -> Result<momentum::Session<momentum::rfcomm::WindowsRfcomm>, Boxed> {
     let needle = if filter.is_empty() { None } else { Some(filter) };
-    let targets = momentum::rfcomm::find(momentum::GAIA_SERVICE_UUID, needle)?;
-    if targets.is_empty() {
+    let found = momentum::rfcomm::find(momentum::GAIA_SERVICE_UUID, needle)?;
+    if found.is_empty() {
         return Err(format!(
             "nothing publishes the control service ({}). Is the headset switched on? \
              Try `momentum rf-scan`.",
@@ -334,12 +345,29 @@ fn connect_first(
         )
         .into());
     }
+    let targets: Vec<_> = match only {
+        None => found,
+        Some(want) => found
+            .into_iter()
+            .filter(|target| momentum::rfcomm::channel(&target.device_id) == Some(want))
+            .collect(),
+    };
+    if targets.is_empty() {
+        return Err(format!(
+            "this device publishes no control service on channel {}; `momentum rf-scan` \
+             lists the channels it does.",
+            only.unwrap_or_default()
+        )
+        .into());
+    }
     let mut last_error = None;
     for target in &targets {
         println!(
-            "connecting to {} ({}) ...",
+            "connecting to {} ({}) on channel {} ...",
             target.name,
-            momentum::rfcomm::peer_address(&target.device_id).unwrap_or_default()
+            momentum::rfcomm::peer_address(&target.device_id).unwrap_or_default(),
+            momentum::rfcomm::channel(&target.device_id)
+                .map_or_else(|| "?".to_string(), |c| c.to_string()),
         );
         let link = match momentum::rfcomm::connect(target) {
             Ok(link) => link,
@@ -507,7 +535,7 @@ fn watch(seconds: u64, filter: &str, raw: bool) -> Result<(), Boxed> {
     if raw {
         // Passive: nothing is written, so whatever arrives is the headset
         // talking on its own. This is how an unknown command shows up.
-        let mut link = connect_first(filter, false)?.into_link();
+        let mut link = connect_first(filter, false, None)?.into_link();
         println!("listening for {seconds}s of raw traffic; nothing will be sent");
         let deadline = Instant::now() + Duration::from_secs(seconds);
         while Instant::now() < deadline {
@@ -637,11 +665,12 @@ fn probe(
     vendor: Option<&str>,
     cmd: Option<&str>,
     payload: &str,
+    channel: Option<u32>,
 ) -> Result<(), Boxed> {
     use momentum::cmd::feature;
     use momentum::proto::frame::VENDOR_QUALCOMM;
 
-    let mut link = connect_first(filter, false)?.into_link();
+    let mut link = connect_first(filter, false, channel)?.into_link();
 
     let mut probes: Vec<momentum::Frame> = Vec::new();
     if let Some(text) = cmd {

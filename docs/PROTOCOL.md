@@ -514,6 +514,22 @@ The remaining way to change this headset's sound from a PC is the write command 
 the **byte** store, and it is not in the range tried: `0x1002`, `0x100a`, `0x100c`
 and `0x100e` all answer `05` with the phone connected or not.
 
+### RFCOMM channel 1 is the same server
+
+The headset publishes the control service twice — `rf-scan` lists `RFCOMM:00000000`
+and `RFCOMM:00000001` under one UUID — and until `probe --channel` existed, every
+measurement in this document had gone to whichever the OS listed first. The second
+channel was the last place a different, more permissive command set could have been
+hiding, on the general theory that Qualcomm parts sometimes put tuning on a second
+control channel.
+
+It is the same server. On both channels: the same register ack, the same battery and
+charging pushes, the same serial under vendor `0x001D`, the same seven-table equaliser
+response to registering feature `0x08` — table for table, byte for byte — and the same
+`0x1182 [05]` refusal for the `(band, gain)` write. A second connection is a second
+connection, nothing more. `--channel` stays in the tool because proving that required
+it, and because the next person to wonder deserves to answer it in one command.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
