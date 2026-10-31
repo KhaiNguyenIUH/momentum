@@ -245,6 +245,19 @@ pub const PUSH_SAMPLE_RATE: u16 = 0x089A;
 /// mystery byte. An earlier name here promised a "link state", a guess wearing a label.
 pub const PUSH_CODEC: u16 = 0x0880;
 
+/// Which equaliser path the DSP is applying. `UINT16`, unlike every other setter in this
+/// block. (live: `[00, 01]` on a unit running its user equaliser)
+pub const GET_AUDIO_MODE: u16 = 0x0804;
+
+/// Select the audio mode. Payload is the same big-endian `UINT16`.
+///
+/// Live on MOMENTUM 5: `[00, 01]` accepted; `[00, 04]` answered `0x0983 [80]`, already,
+/// when the device was already in mode 4, and `[00, 01]` was then accepted to leave it.
+/// The names for the values come from Smart Control Plus's enumeration, which is shared
+/// across the product family, so a mode number existing here is not evidence that the
+/// feature it names exists in this firmware.
+pub const SET_AUDIO_MODE: u16 = 0x0803;
+
 /// Read the serial number. The payload of the reply is ASCII digits.
 ///
 /// This one belongs to the **Sennheiser** vendor namespace: under Qualcomm's
@@ -336,6 +349,8 @@ pub fn name(cmd: u16) -> &'static str {
         // equaliser is audible at all. Both read via their `+0x100` reply.
         0x0900 => "codec_reply",
         0x0904 => "audio_mode_reply",
+        0x0903 => "audio_mode_set_ack",
+        0x0983 => "audio_mode_error",
         0x1301 => "firmware_three_part_reply",
         0x1306 => "model_reply",
         // Getters named from Sennheiser's device model and answered on this MOMENTUM 5,

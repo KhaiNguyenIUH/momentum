@@ -277,9 +277,29 @@ impl<L: Link> Session<L> {
         self.state.eq = Equaliser::default();
     }
 
+    /// The audio mode as the device reports it: two bytes, big-endian.
+    pub fn audio_mode(&mut self) -> Result<Vec<u8>> {
+        Ok(self.request(cmd::GET_AUDIO_MODE, [], DEFAULT_TIMEOUT)?.payload)
+    }
+
+    /// Select the audio mode and read it back.
+    ///
+    /// The payload is a big-endian `UINT16`, unlike the one-byte setters elsewhere in
+    /// this block, which is why this does not go through [`Session::set_and_confirm`].
+    /// A mode the firmware does not implement refuses with a code rather than ignoring
+    /// the frame, and `already` comes back as [`Error::Refused`] like any other error
+    /// frame — callers should expect to see it when the mode is already active.
+    pub fn set_audio_mode(&mut self, mode: u16) -> Result<Vec<u8>> {
+        self.request(
+            cmd::SET_AUDIO_MODE,
+            [(mode >> 8) as u8, mode as u8],
+            DEFAULT_TIMEOUT,
+        )?;
+        self.audio_mode()
+    }
+
     /// Write a value, then read it back so callers see confirmed state.
-    fn set_and_confirm(&mut self, command: u16, value: u8, confirm: u16) -> Result<Event> {
-        self.request(command, [value], DEFAULT_TIMEOUT)?;
+    fn set_and_confirm(&mut self, command: u16, value: u8, confirm: u16) -> Result<Event> {        self.request(command, [value], DEFAULT_TIMEOUT)?;
         let reply = self.request(confirm, [], DEFAULT_TIMEOUT)?;
         Ok(Event::decode(&reply))
     }

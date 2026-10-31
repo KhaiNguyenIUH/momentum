@@ -91,6 +91,24 @@ enum Command {
     /// The equaliser: read the filter bank, or move one part of one band and hear it.
     #[command(subcommand)]
     Eq(EqAction),
+    /// Show or change the audio mode — which equaliser path the DSP is applying. The user
+    /// equaliser is only heard in `usereq`; a curve written under another mode is stored,
+    /// correct, and silent.
+    ///
+    /// The names are Smart Control Plus's enumeration, which is shared across the product
+    /// family, so `parametric` means "the value that enum calls parametricEq" and nothing
+    /// more. This firmware accepts it and sits in it; no parametric parameter store has
+    /// been found on the wire, and no ear has yet attributed any change of sound to a
+    /// change of mode on this unit.
+    Mode {
+        /// `off`, `usereq`, `podcast`, `personalized`, `parametric`, `hearing`, or 0 to 5.
+        /// Omit to read the mode without changing it.
+        #[arg(value_parser = parse_mode)]
+        mode: Option<u8>,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Interactive step-by-step listener, for experiments where a human is the one
     /// doing something physical. Registers the given features, prints what arrives,
     /// then waits: **press Enter to close a step** and start the next one, `q` to
@@ -409,6 +427,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
         Command::Eq(action) => Some(eq(action)),
+        Command::Mode { mode, filter } => Some(audio_mode(*mode, filter)),
         Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
@@ -832,6 +851,93 @@ fn eq_tune(filter: &str) -> Result<(), Boxed> {
             }
             other => println!("`{other}` is not a command; ? lists them"),
         }
+    }
+    Ok(())
+}
+
+/// The audio modes as Smart Control Plus names them. The numbering is shared across that
+/// app's whole product family, so a name here is a claim about the enum, not about this
+/// firmware: only `off`, `usereq` and `podcast` have been seen to do anything on a
+/// MOMENTUM 5, and `parametric` was accepted while nobody could hear a difference.
+fn mode_name(mode: u8) -> &'static str {
+    match mode {
+        0 => "off",
+        1 => "usereq",
+        2 => "podcast",
+        3 => "personalized",
+        4 => "parametric",
+        5 => "hearing",
+        _ => "unknown",
+    }
+}
+
+/// Accept either the name or the number, because `momentum mode 1` is not something
+/// anyone remembers without looking up.
+fn parse_mode(raw: &str) -> Result<u8, String> {
+    if let Ok(number) = raw.parse::<u8>() {
+        return if number <= 5 {
+            Ok(number)
+        } else {
+            Err(format!("{number} is outside the 0..5 the app's enumeration defines"))
+        };
+    }
+    match raw.to_ascii_lowercase().as_str() {
+        "off" => Ok(0),
+        "usereq" | "eq" | "user" => Ok(1),
+        "podcast" | "podcastmode" => Ok(2),
+        "personalized" | "personalizedsound" => Ok(3),
+        "parametric" | "parametriceq" | "peq" => Ok(4),
+        "hearing" | "hearingenhancement" => Ok(5),
+        other => Err(format!(
+            "`{other}` is neither a number 0..5 nor one of off, usereq, podcast, \
+             personalized, parametric, hearing"
+        )),
+    }
+}
+
+/// Print a mode payload — two bytes big-endian — as the number and the name.
+fn mode_text(payload: &[u8]) -> String {
+    let raw = u16::from_be_bytes([payload.first().copied().unwrap_or(0), payload.get(1).copied().unwrap_or(0)]);
+    let mode = u8::try_from(raw).map_or(255, |small| {
+        if small <= 5 {
+            small
+        } else {
+            255
+        }
+    });
+    format!("{raw} ({})", mode_name(mode))
+}
+
+/// Show or change the audio mode, reading it back either way.
+#[cfg(windows)]
+fn audio_mode(mode: Option<u8>, filter: &str) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    let Some(want) = mode else {
+        println!("audio mode: {}.", mode_text(&session.audio_mode()?));
+        return Ok(());
+    };
+    match session.set_audio_mode(u16::from(want)) {
+        Ok(payload) => {
+            println!("audio mode: {}.", mode_text(&payload));
+            // The device reports this mode as already active when it is already active,
+            // so silence here means the mode was already what you asked for.
+            if want == 4 {
+                println!("this firmware accepts mode 4 and sits in it; no parametric parameter \
+                          store has been found on the wire, and no ear has attributed any change \
+                          of sound to entering it.");
+            }
+            if want != 1 {
+                println!("the user equaliser is not heard in this mode — the curve stays stored and silent.");
+            }
+        }
+        // `already` arrives as an error frame, which is information rather than failure.
+        Err(err) => {
+            println!("mode {want} ({}) was not accepted: {err}", mode_name(want));
+            println!("audio mode: {}.", mode_text(&session.audio_mode()?));
+        }
+    }
+    for warning in &session.warnings {
+        println!("note: {warning}");
     }
     Ok(())
 }
