@@ -926,9 +926,41 @@ The wide gain store is still unexplained, and one more unit deserves taking seri
 is ±18 dB, three times what the interface permits; read in the **1/60 dB** of the app's own
 Gen1 encoder it is ±3 dB — a level-shift scale rather than an equaliser scale, which would
 suit a store the equaliser screen has no reason to touch. Nothing on this side distinguishes
-the two readings, and inventing a third would be worse than leaving it open.
+the two readings, and inventing a third would be worse than leaving it open. What is no
+longer open is whether anything reads it: a tilt of −6 … +6 dB written there was confirmed
+by re-reading the device in mode 1 and again in mode 4, and produced no sound in either.
 
-### Audio mode 4 is a state this firmware will sit in
+### There is no parametric equaliser on this unit
+
+The theory was worth testing and is now dead, so the four things that killed it are worth
+recording in order.
+
+The old app's parametric protocol is not in this firmware. `0x1003` is Sennheiser's
+Gen1 `Sound_GetCustomEQ`, and its payload is not an index but a list of `(parameter id,
+value)` pairs — `0x0101` master gain, then per band `0x0110` type, `0x0111` frequency,
+`0x0112` gain, `0x0113` Q, which is a five-band parametric equaliser spelled out in full.
+Knocked on with an empty payload it had always answered zeros, which means nothing. Asked
+properly, in the format the app actually used:
+
+```
+0x1003 [00 05, 01 01 00 00, 01 12 00 00, 01 22 00 00, 01 32 00 00, 01 42 00 00]  →  0x1183 [05]  not supported
+0x1003 [00 04, 01 10 00 00, 01 20 00 00, 01 30 00 00, 01 40 00 00]               →  0x1183 [05]  not supported
+0x1007 []  level shift                                                            →  0x1187 [01]  unexpected code
+0x1005 [00 00]  knob                                                              →  0x1185 [01]  unexpected code
+```
+
+That was tried while the device sat in audio mode 4, where a parametric path would have had
+every reason to answer. It does not. The five-band parameter-list protocol the HDB 630
+generation used is absent, not hidden.
+
+No parameter store turned up anywhere else either: `0x1015`–`0x101f` all answer `[01]`,
+feature registrations from `0x1c` to `0x2f` produce nothing shaped like a band table, and
+the one query that reads like a configuration for a second equaliser, `0x1014`, answers
+`[00, 3c]` — zero bands.
+
+### Audio mode 4, and what the ears actually heard
+
+`momentum mode` reads and writes the audio mode through `0x0804` and `0x0803`.
 
 ```
 0x0804           →  0x0904 [00, 04]   found in mode 4, having read [00, 01] an hour earlier
@@ -937,14 +969,21 @@ the two readings, and inventing a third would be worse than leaving it open.
 0x0804           →  0x0904 [00, 01]
 ```
 
-The mode numbers are Smart Control Plus's `Lgb` enum, one enumeration shared across the
-product family, so this unit answering mode 4 is not evidence that mode 4 means *parametric*
-here; the same source's M4 feature list reads *Equalizer v2 — graphic EQ, no parametric*, and
-no parametric parameter store turned up in `0x1015`–`0x101f` or in registrations up to
-feature `0x2f`. What the frames do establish is that mode 4 is not refused: the device was
-in it, said ALREADY when asked again, and moved back on request. Why it was in mode 4 at all,
-nobody having sent the command here, is unresolved — including the mundane possibility that
-it was sent from somewhere and promptly forgotten.
+Entering mode 4 was reported by ear as a clear change: `usereq` "much bassier", `parametric`
+"more neutral". That was real, and it was not the mode. The user curve at the time was flat
+and the **bass boost sub-mode was on** — `0x1009 [01]`, the setting the Gen1 app carried as a
+bit in the knob value and which added five decibels to the two lowest bands. It is a `userEq`
+sub-mode, so it applies in mode 1 and not in mode 4, and it was the entire difference: with
+bass boost off and the curve flat, the two modes are indistinguishable by ear. The boost was left off after the test and the user curve left flat,
+which is not how this unit was found at the start of the session: `0x1009` read `[01]`.
+Anything reproducing these numbers should set the boost back first.
+
+So mode 4 is accepted, is a state the device will sit in, and has no audible consequence of
+its own — which is what selecting a mode whose parameters cannot be reached looks like. The
+mode numbers come from Smart Control Plus's `Lgb` enum, shared across the product family, and
+the same source's M4 feature list reads *Equalizer v2 — graphic EQ, no parametric*. Nothing
+here contradicts that; the MOMENTUM 5 simply carries the enum and not the feature. Why the
+unit was found in mode 4 at all, nobody having sent the command, is unresolved.
 
 All three parameters are on the command line now, as `momentum eq freq`, `eq q` and
 `eq type`. Each re-reads the bank before printing it: the session drops its cached tables

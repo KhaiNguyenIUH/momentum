@@ -76,6 +76,7 @@ answers.
 | `eq type <band> <n>` | Set a band's filter type. An opaque enumeration nobody has published; `14` is what every band ships with |
 | `eq flat` | Zero every gain |
 | `eq tune` | Interactive tuner: one connection, an edit per keystroke, `r` puts the session's starting snapshot back |
+| `mode [name\|0-5]` | Read or change the audio mode the DSP applies — `off`, `usereq`, `podcast`, `personalized`, `parametric`, `hearing` |
 | `anc <on\|off>` | Noise cancelling |
 | `transparency <0..=100>` | Transparent-hearing level; `0` turns it off |
 | `bass <on\|off>` | Bass boost |
@@ -122,6 +123,15 @@ pushes, so a long-lived `watch` loop and a one-shot `status` share the same code
 - **The equaliser is only audible in one audio mode.** `0x0804` reports it, and the user
   curve is heard when the mode is `userEq`. A write made under another mode is stored
   correctly and heard not at all.
+- **There is no parametric equaliser hiding here, tested as hard as the wire allows.** The
+  per-band frequency, Q and filter type that `momentum eq show` prints are the graphic
+  sliders' own biquads — the MOMENTUM 4 pushes the same three tables for its five sliders —
+  and Sennheiser's older five-band parametric protocol is answered `not supported` when
+  `0x1003` is queried in the format its own app used. Audio mode 4, which the shared enum
+  calls `parametricEq`, is accepted and sat in, and changes nothing you can hear: what
+  sounded like a different tuning turned out to be the **bass boost** sub-mode, which belongs
+  to `userEq` and stops applying in any other mode. `momentum bass off` and the two modes are
+  indistinguishable.
 - **Volume is not a headset command.** It travels over AVRCP as "absolute
   volume", and Windows owns that negotiation, so `momentum volume` sets the
   endpoint's master volume — the tray slider's own path, which for Bluetooth
