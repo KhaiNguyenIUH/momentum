@@ -76,6 +76,7 @@ answers.
 | `volume [0..=100]` | Playback volume, `--list` to see devices — via Windows, not the headset |
 | `mute [on\|off]` | Mute that endpoint; the level survives it |
 | `watch [--seconds N] [--raw]` | Live state pushes, decoded or raw |
+| `audio [--seconds N]` | The stream the codec agreed to — sample rate and link state, straight from the headset |
 | `probe [--cmd 1A05 --payload 01 --vendor 495]` | Send queries, print answers; the reverse-engineering tool |
 | `steps [--script wear\|buttons] [--out file]` | Listener you drive by hand: it names the state to put the headphones in, waits for Enter, and attributes every frame to that step |
 | `host [--serve]` | Ask whether Windows will let this PC hold the control service — and with `--serve`, hold it, advertise it and log whatever a client sends |

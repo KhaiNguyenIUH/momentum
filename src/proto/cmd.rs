@@ -67,8 +67,16 @@ pub fn error_name(code: u8) -> &'static str {
 pub mod feature {
     /// Battery level and charging state. (confirmed)
     pub const BATTERY: u8 = 0x03;
-    /// Per-unit state transitions, e.g. in-case / out-of-case. (confirmed)
-    pub const UNIT_STATE: u8 = 0x04;
+    /// Unit state: worn, not worn, in case. Registering `02` is what produces the
+    /// `0x0482` transitions, which is the frame that separates an ear from a table.
+    /// (confirmed, by a scripted worn/not-worn test)
+    pub const UNIT_STATE: u8 = 0x02;
+    /// The audio stream: this is the feature whose tables arrive as the `0x08xx`
+    /// block, including the sample rate the codec actually negotiated. It was named
+    /// for unit state before that block was understood, which is why the number here
+    /// looks one feature off from the frame ids it produces. (confirmed by streaming
+    /// from a phone and watching `0x089a` follow the codec)
+    pub const AUDIO: u8 = 0x04;
     /// User equaliser. **live on MOMENTUM 5**: registering it answers the ack
     /// and then pushes the whole band configuration.
     pub const EQ: u8 = 0x08;
@@ -189,6 +197,14 @@ pub const PUSH_EQ_STATE: u16 = 0x1093;
 /// PC, which is Windows' default output. Live on MOMENTUM 5, firmware 6.21.1.
 pub const PUSH_SAMPLE_RATE: u16 = 0x089A;
 
+/// A one-byte link state, from the same feature as the sample rate.
+///
+/// Observed values: `02` at rest, `ff` while a stream was being renegotiated, `08`
+/// while a phone streamed at 48 kHz. Those three are facts; what the bits mean is not
+/// established, and the name keeps the claim as small as the evidence. An earlier name
+/// for this frame promised *stability* and was a guess wearing a label.
+pub const PUSH_AUDIO_LINK: u16 = 0x0880;
+
 /// Read the serial number. The payload of the reply is ASCII digits.
 ///
 /// This one belongs to the **Sennheiser** vendor namespace: under Qualcomm's
@@ -281,7 +297,7 @@ pub fn name(cmd: u16) -> &'static str {
         // link, `ff` for the moment the link is renegotiated, `08` while a phone
         // streamed at 48 kHz. What the values mean is still unknown, so the name says
         // only that it belongs to the link.
-        0x0880 => "audio_link_push",
+        PUSH_AUDIO_LINK => "audio_link_push",
         PUSH_SAMPLE_RATE => "sample_rate_push",
         0x1A81 => "mode_list_push",
         0x2C83 => "wear_push",

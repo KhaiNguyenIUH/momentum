@@ -175,6 +175,18 @@ enum Command {
         filter: String,
     },
     /// Print every state push the headset sends, for as long as you watch.
+    /// Show what the audio codec actually negotiated, live: the sample rate the
+    /// headset reports and the link-state frame that moves whenever the stream is
+    /// re-established. Play something to watch it change — silence is a value here,
+    /// not a missing reading.
+    Audio {
+        /// Seconds to watch.
+        #[arg(long, default_value_t = 12)]
+        seconds: u64,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     Watch {
         /// Seconds to keep the channel open.
         #[arg(long, default_value_t = 30)]
@@ -325,6 +337,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
         Command::Host { serve, name } => Some(host(*serve, name)),
         Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
+        Command::Audio { seconds, filter } => Some(audio(*seconds, filter)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
         Command::Bass { state, filter } => Some(bass(state, filter)),
@@ -602,6 +615,68 @@ fn info(filter: &str) -> Result<(), Boxed> {
     }
     for warning in &session.warnings {
         println!("note: {warning}");
+    }
+    Ok(())
+}
+
+/// The audio link as the headset itself reports it.
+///
+/// Deliberately not Windows' endpoint: the operating system's idea of the format is a
+/// request, while `0x089a` is what the codec agreed to. The two disagree every time
+/// aptX refuses the file's rate, and only one of them describes what was heard.
+#[cfg(windows)]
+fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
+    use momentum::cmd::feature;
+    use momentum::proto::frame::VENDOR_QUALCOMM;
+
+    let mut link = connect_first(filter, false, None)?.into_link();
+    // Feature 0x10 is registered alongside the audio feature because `0x208a` has
+    // arrived at every stream transition ever observed, and a frame that only shows
+    // up in one of two connections is worth watching from both.
+    for id in [feature::AUDIO, 0x10] {
+        momentum::Link::write_frame(
+            &mut link,
+            &command(VENDOR_QUALCOMM, momentum::cmd::REGISTER_FEATURE, vec![id]),
+        )?;
+    }
+    println!(
+        "watching the audio link for {seconds}s — play something, pause it, switch \
+         device: silence is a reading here, not an absence of one"
+    );
+
+    let started = Instant::now();
+    let deadline = started + Duration::from_secs(seconds);
+    let mut rate: Option<u32> = None;
+    let mut link_state: Option<Vec<u8>> = None;
+    while Instant::now() < deadline {
+        let Some(frame) = momentum::Link::read_frame(&mut link, Duration::from_millis(500))? else {
+            continue;
+        };
+        if frame.cmd == momentum::cmd::PUSH_SAMPLE_RATE && frame.payload.len() == 4 {
+            rate = Some(u32::from_be_bytes(frame.payload[..4].try_into().unwrap()));
+        } else if frame.cmd == momentum::cmd::PUSH_AUDIO_LINK {
+            link_state = Some(frame.payload.clone());
+        }
+        println!(
+            "  t+{:6.1}s  0x{:04x} {:<22} {:02x?}{}",
+            started.elapsed().as_secs_f32(),
+            frame.cmd,
+            momentum::cmd::name(frame.cmd),
+            frame.payload,
+            note(frame.cmd, &frame.payload),
+        );
+    }
+
+    match rate {
+        Some(0) => println!("the headset reports no stream: the link is idle."),
+        Some(hz) => println!(
+            "the headset is decoding {hz} Hz. a file above that rate was resampled or \
+             refused by the codec, not by Windows."
+        ),
+        None => println!("no sample-rate frame in {seconds}s of listening."),
+    }
+    if let Some(state) = link_state {
+        println!("last link state, meaning unestablished: {state:02x?}");
     }
     Ok(())
 }

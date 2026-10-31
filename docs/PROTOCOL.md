@@ -855,9 +855,14 @@ been asked for:
 
 | frame | contents |
 | --- | --- |
-| `0x108b eq_frequency_push` | band 0 at 0 Hz — the shelf — then **325, 1500, 2500, 4500, 8000, 13000, 16000 Hz**, u16 big-endian |
+| `0x108b eq_frequency_push` | eight `(index, u16 big-endian)` entries: **90, 325, 1500, 2500, 4500, 8000, 13000, 16000 Hz** |
 | `0x108f eq_limit_push` | `0e` for all eight bands: the range is **±14 dB**, not the ±20 dB a drawn table of commands once claimed |
 | `0x1091 eq_gain_wide_push` | eight entries of three bytes, all zero: a second, wider gain store that has never been written |
+
+An earlier reading of this table called the first band a shelf at 0 Hz. It is not: the
+leading byte of each entry is an **index**, as it is in every table in this block, so the
+first band is 90 Hz and there is no shelf. The gain byte that the app's first slider moves
+is the first byte, whatever the two tables think that band is called.
 
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
