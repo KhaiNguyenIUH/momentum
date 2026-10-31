@@ -903,17 +903,18 @@ fn steps(
 /// been pinned down that cleanly. Everything else prints as bytes, on purpose.
 #[cfg(windows)]
 fn note(cmd: u16, payload: &[u8]) -> String {
-    if cmd == momentum::cmd::PUSH_SAMPLE_RATE {
-        if let Ok(bytes) = <[u8; 4]>::try_from(payload) {
-            let hertz = u32::from_be_bytes(bytes);
-            return if hertz == 0 {
-                "  (no stream)".to_string()
-            } else {
-                format!("  ({hertz} Hz)")
-            };
-        }
+    if cmd != momentum::cmd::PUSH_SAMPLE_RATE {
+        return String::new();
     }
-    String::new()
+    let Ok(bytes) = <[u8; 4]>::try_from(payload) else {
+        return String::new();
+    };
+    let hertz = u32::from_be_bytes(bytes);
+    if hertz == 0 {
+        "  (no stream)".to_string()
+    } else {
+        format!("  ({hertz} Hz)")
+    }
 }
 
 /// Send read-only queries and print whatever answers.
