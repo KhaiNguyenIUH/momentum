@@ -782,13 +782,91 @@ Two consequences, both of which cost us time:
 Sending a command with the *current* values is a no-op only if it is accepted, so the
 curve was read back after every attempt above; it never moved.
 
+## The `0x1a` block, and what the two refusal codes mean
+
+Registering features only tells us what the headset *pushes*. Sending to the `0x1a`
+block — where the noise-control commands live — turns out to be worth doing on its own,
+and it separates two refusals we had been treating as one:
+
+| sent | answer | meaning |
+| --- | --- | --- |
+| `0x1a01` | `0x1b01 [01,00, 03,00, 02,00]` | three records: the noise-control modes offered |
+| `0x1a03` | `0x1b03 [64]` | answers 100, ignores its payload, and is **not** battery, which reads 90 |
+| `0x1a05` | `0x1b05 [01]` | the current noise-control mode |
+| `0x1a00`, `1a02`, `1a04` | `[05]` | no such command |
+| `0x1a06`–`0x1a0f` | `[01]` | **refused, and the payload is not why** |
+
+The distinction was demonstrated rather than assumed. A command that answers an empty
+payload becomes `[05]` the moment a payload is added — `0x1a05` and `0x1009` both do it,
+and `0x100f` answered `[82]` — so the form is part of the command's identity. Meanwhile
+`0x1a06`–`0x1a0f` answer `[01]` to one byte, to eight, to twenty, to the current equaliser
+curve, to the current mode, and before or after declaring their feature. One hundred and
+forty payload variants, and not one of them changed the answer.
+
+So `[05]` is *no such command* and `[01]` is *this command will not run for this client*.
+Every command that reads works from this second control link; every command that could
+write answers `[01]`. The distinction is not which host is connected — these attempts
+were made with the PC as the **only** host — and not the payload, not the length and not
+whether the feature was declared. What remains is that the write path expects a client
+that announced itself as something this connection has not.
+
+## The Bluetooth LE side, for as far as Windows can see it
+
+The headset advertises over LE, though so sparsely that a six-second scan usually misses
+it and ninety seconds caught it once:
+
+- **Services advertised:** `0x180F` battery, `0x180A` device information, `0xFCFE` Google
+  Fast Pair.
+- **Manufacturer `0x0006`** — Microsoft — carrying `80:97:bb:c5:ba:c3` byte-reversed, the
+  headset's classic address, which is Swift Pair's way of letting Windows recognise a
+  classic device from its LE advertisement.
+- **Service data `0xFE2C`** — Fast Pair — with three bytes.
+
+No vendor control service is advertised. Connecting to it from Windows returns
+**zero services**, twice, with `btleplug` asking with `BluetoothCacheMode::Uncached`, so
+this is not the stale-cache case; it failed both while the headset sat in pairing mode and
+after it timed out of it. So whether the phone's app reaches a GATT control service over
+LE is still unmeasured — what is measured is that Windows cannot enumerate this device's
+GATT table at all, which means LE is not going to be the route from this machine either.
+
+## The equaliser, read
+
+`0x1082` is **eight signed bytes, one per band, in tenths of a dB, band 1 first** — no
+slot byte and no index. Not inferred: each byte was moved by moving one slider in the
+phone's app while our own connection watched, and every value landed where it should.
+
+| set in the app | byte | frame carried |
+| --- | --- | --- |
+| band 1 to +6 dB | 0 | `3c` = +60 |
+| band 3 to −6 dB | 2 | `c4` = −60 |
+| band 5 to +1 dB | 4 | `0a` = +10 |
+| band 7 to −1 dB | 6 | `f6` = −10 |
+
+Dragging a slider produces a frame per notch — eleven in one pass — so the device
+notifies every intermediate value rather than the settled one.
+
+**Every control change reaches all control connections.** A second RFCOMM client that
+sent nothing at all sees the phone's edits arrive as pushes. That is what made the table
+above possible, and it is worth restating because it is not the obvious design: the
+headset does not confine a controller's changes to the controller that made them.
+
+Declaring feature `08` expands the rest of the block, and three of those tables had never
+been asked for:
+
+| frame | contents |
+| --- | --- |
+| `0x108b eq_frequency_push` | band 0 at 0 Hz — the shelf — then **325, 1500, 2500, 4500, 8000, 13000, 16000 Hz**, u16 big-endian |
+| `0x108f eq_limit_push` | `0e` for all eight bands: the range is **±14 dB**, not the ±20 dB a drawn table of commands once claimed |
+| `0x1091 eq_gain_wide_push` | eight entries of three bytes, all zero: a second, wider gain store that has never been written |
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
-- **User EQ command shape.** See *The equaliser* — the ids, the band table and the
-  write acks are measured; the dB scale and the multi-band write shape are not.
-- **The dB scale of an EQ gain**, and the shape `0x1002` wants when writing gains.
-  See *The equaliser* above; both need one deliberate audible write.
+- **The equaliser write.** The scale is measured — tenths of a dB, signed, eight bytes —
+  and the read side is complete. No id has accepted a gain table from this connection:
+  see *The `0x1a` block* for why `[01]` is not a payload complaint. What remains is the
+  chance the write expects a client that authenticated first, which is not something this
+  transport has been seen to ask for.
 - **`0x1a81`, seen twice during the same capture**, payload `01 01 03 00 02 00` and
   once as `01 00 03 00 02 00`. That is `0x1a01` with the notification bit, so it
   belongs to the noise-control feature and the shape reads like three (mode, value)

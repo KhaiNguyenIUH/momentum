@@ -80,6 +80,8 @@ answers.
 | `steps [--script wear\|buttons] [--out file]` | Listener you drive by hand: it names the state to put the headphones in, waits for Enter, and attributes every frame to that step |
 | `host [--serve]` | Ask whether Windows will let this PC hold the control service — and with `--serve`, hold it, advertise it and log whatever a client sends |
 | `rf-scan [--uuid …]` | List paired devices publishing an RFCOMM control service |
+| `scan [--seconds N] [--filter text]` | Bluetooth LE advertisements, with the services and manufacturer data each one carries |
+| `gatt [--address A] [--notify N]` | Dump an LE device's GATT table, read it, stream its notifications |
 | `scan`, `gatt` | Bluetooth LE probes, for headsets that expose control over GATT instead |
 
 ## As a library

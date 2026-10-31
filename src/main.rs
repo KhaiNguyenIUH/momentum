@@ -1316,6 +1316,22 @@ async fn scan(seconds: u64, filter: &str) -> Result<(), Boxed> {
             peripheral.is_connected().await.unwrap_or(false),
             if name.is_empty() { "(unnamed)" } else { &name }
         );
+        // What the advertisement itself carries. Whether a control path exists over LE
+        // is usually answered here, without a connection: a device that means to be
+        // controlled publishes its service in the advertisement, and a manufacturer id
+        // says whose advertisement this is.
+        if !properties.services.is_empty() {
+            println!("    advertised services: {:?}", properties.services);
+        }
+        for (id, data) in &properties.manufacturer_data {
+            println!("    manufacturer 0x{id:04x}: {data:02x?}");
+        }
+        for (uuid, data) in &properties.service_data {
+            println!("    service data {uuid}: {data:02x?}");
+        }
+        if let Some(appearance) = properties.appearance {
+            println!("    appearance 0x{appearance:04x}");
+        }
         shown += 1;
     }
     if shown == 0 {
