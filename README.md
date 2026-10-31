@@ -70,6 +70,7 @@ answers.
 | `status` | Noise-control mode, ambient level, battery, bass boost, and the device line |
 | `info` | Product name, firmware version with build stamp, serial number |
 | `eq show` | Every band with its centre frequency, Q, filter type and gain in decibels; `--raw` adds the tables we cannot yet explain |
+| `eq set <band> [--gain 6] [--freq 4000] [--q 0.5] [--type 14] [--hold 12]` | One connection, several parameters, and a counted undo — the form for listening: `eq set 0 --gain 6 --hold 12` |
 | `eq gain <band> <dB>` | Move one band, read it back, and mean it: the change is stored and audible |
 | `eq freq <band> <Hz>` | Move a band's centre frequency. Acknowledged and stored; whether the audio path reads it is what the listening test decides |
 | `eq q <band> <Q>` | Set a band's Q, as a decimal — `0.71` is 1/√2, `12` is a narrow peak |

@@ -308,6 +308,37 @@ enum EqAction {
         #[arg(long, default_value = "")]
         filter: String,
     },
+    /// Change one or more parameters of one band in a single connection, and put them
+    /// back after a counted hold. This is the form for listening: one line carries the
+    /// whole change, `--hold` does the undo, and the values it restores to are printed
+    /// first so a hand restore is possible if you interrupt it.
+    ///
+    /// `momentum eq set 0 --gain 6 --hold 12` is the entire biquad test. Without
+    /// `--hold` the change stays, as with the single-parameter commands.
+    Set {
+        /// Band index, as `momentum eq show` prints it.
+        band: u8,
+        /// Gain in decibels, signed tenths on the wire: `6`, `-3`, `2.5`.
+        #[arg(long, allow_hyphen_values = true)]
+        gain: Option<f32>,
+        /// Centre frequency in hertz, 10 to 24000.
+        #[arg(long)]
+        freq: Option<u16>,
+        /// Q as a decimal — `0.71` is 1/√2, `12` a narrow peak. Sent as Q12.
+        #[arg(long)]
+        q: Option<f32>,
+        /// Filter type, an opaque small integer; `14` on every band out of the factory.
+        #[arg(long, visible_alias = "type")]
+        kind: Option<u8>,
+        /// Hold the change this many seconds, then restore what was there. Nothing is
+        /// restored if you kill the program first — the values it will restore to are
+        /// printed before the count begins.
+        #[arg(long)]
+        hold: Option<u64>,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Move one band's gain, in decibels, and read it back. The one table whose effect on
     /// the sound has been confirmed by ear; the headset keeps the curve after power-off.
     ///
@@ -325,7 +356,7 @@ enum EqAction {
         #[arg(long, default_value = "")]
         filter: String,
     },
-    /// Set a band's centre frequency in hertz. Acknowledged, and the bank reports the new
+    /// Set one band's frequency, in hertz. Acknowledged, and the bank reports the new
     /// value afterwards; whether the audio path reads it is what the listening test is for.
     Freq {
         /// Band index.
@@ -591,6 +622,121 @@ fn status(filter: &str) -> Result<(), Boxed> {
     if let Some(identity) = identity {
         println!("device: {identity}");
     }
+    for warning in &session.warnings {
+        println!("note: {warning}");
+    }
+    Ok(())
+}
+
+/// Change several parameters of one band over one connection, with an optional counted
+/// restore, because listening to a change means living with it for a few seconds and then
+/// not living with it.
+///
+/// The values it will restore to are printed **before** the hold, not only after: the
+/// only way to abandon a hold is to interrupt the program, and an interrupted restore is
+/// one you have to finish by hand from numbers you can no longer see.
+#[cfg(windows)]
+fn eq_set(
+    band: u8,
+    gain: Option<f32>,
+    freq: Option<u16>,
+    q: Option<f32>,
+    kind: Option<u8>,
+    hold: Option<u64>,
+    filter: &str,
+) -> Result<(), Boxed> {    if gain.is_none() && freq.is_none() && q.is_none() && kind.is_none() {
+        return Err("nothing to change: give --gain, --freq, --q or --type".into());
+    }
+    if let Some(hz) = freq {
+        if !(10..=24000).contains(&hz) {
+            return Err(format!("{hz} Hz is outside 10..24000").into());
+        }
+    }
+    if let Some(raw_q) = q {
+        if !raw_q.is_finite() || !(0.05..=16.0).contains(&raw_q) {
+            return Err(format!("{raw_q} is not a Q between 0.05 and 16").into());
+        }
+    }
+    let tenths = match gain {
+        Some(db) => {
+            let scaled = (f64::from(db) * 10.0).round();
+            if !db.is_finite() || scaled.abs() > 127.0 {
+                return Err(
+                    format!("{db} dB is not something a signed byte of tenths can hold").into(),
+                );
+            }
+            Some(scaled as i8)
+        }
+        None => None,
+    };
+
+    let mut session = open_session(filter)?;
+    let eq = session.equaliser()?.clone();
+    let index = usize::from(band);
+    if index >= eq.bands() {
+        return Err(format!(
+            "this equaliser describes {} bands, so there is no band {band}",
+            eq.bands()
+        )
+        .into());
+    }
+    let at = |row: &[Option<u16>]| row.get(index).copied().flatten().unwrap_or(0);
+    let was = Band {
+        hz: at(&eq.hz),
+        q: at(&eq.q12),
+        kind: at(&eq.filter_types),
+        tenths: eq
+            .gains_db()
+            .get(index)
+            .copied()
+            .map_or(0, |db| (f64::from(db) * 10.0).round() as i8),
+    };
+
+    if let Some(value) = tenths {
+        session.eq_set_u8(cmd::SET_EQ_GAIN, band, value as u8)?;
+    }
+    if let Some(hz) = freq {
+        session.eq_set_u16(cmd::SET_EQ_FREQUENCY, band, hz)?;
+    }
+    if let Some(raw_q) = q {
+        session.eq_set_u16(
+            cmd::SET_EQ_Q,
+            band,
+            (f64::from(raw_q) * 4096.0).round() as u16,
+        )?;
+    }
+    if let Some(value) = kind {
+        session.eq_set_u8(cmd::SET_EQ_FILTER_TYPE, band, value)?;
+    }
+    session.forget_equaliser();
+    print_bank(&session.equaliser()?);
+
+    let Some(seconds) = hold else {
+        return Ok(());
+    };
+    println!(
+        "holding {seconds}s, then restoring band {band} to {} Hz, Q {:.3}, type {}, {:+.1} dB.",
+        was.hz,
+        f64::from(was.q) / 4096.0,
+        was.kind,
+        f64::from(was.tenths) / 10.0,
+    );
+    std::thread::sleep(Duration::from_secs(seconds));
+
+    if tenths.is_some() {
+        session.eq_set_u8(cmd::SET_EQ_GAIN, band, was.tenths as u8)?;
+    }
+    if freq.is_some() {
+        session.eq_set_u16(cmd::SET_EQ_FREQUENCY, band, was.hz)?;
+    }
+    if q.is_some() {
+        session.eq_set_u16(cmd::SET_EQ_Q, band, was.q)?;
+    }
+    if kind.is_some() {
+        session.eq_set_u8(cmd::SET_EQ_FILTER_TYPE, band, was.kind as u8)?;
+    }
+    session.forget_equaliser();
+    print_bank(&session.equaliser()?);
     for warning in &session.warnings {
         println!("note: {warning}");
     }
@@ -948,6 +1094,15 @@ fn audio_mode(mode: Option<u8>, filter: &str) -> Result<(), Boxed> {
 fn eq(action: &EqAction) -> Result<(), Boxed> {
     match action {
         EqAction::Show { raw, filter } => eq_show(filter, *raw),
+        EqAction::Set {
+            band,
+            gain,
+            freq,
+            q,
+            kind,
+            hold,
+            filter,
+        } => eq_set(*band, *gain, *freq, *q, *kind, *hold, filter),
         EqAction::Gain { band, db, filter } => eq_gain(*band, *db, filter),
         EqAction::Freq { band, hz, filter } => eq_param(
             *band,
