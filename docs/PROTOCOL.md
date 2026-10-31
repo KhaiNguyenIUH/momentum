@@ -939,7 +939,8 @@ It does not. Twice, on separate sittings, with the frequency at 4 kHz and the Q 
 narrowed, the +6 dB stayed exactly where it had been — and the bank in between read back
 `4000 Hz`, `Q 1.200`, exactly as sent, acknowledged by `0x110a` and `0x110c` and re-read
 from the device rather than echoed from the request. Sent singly, outside any batch, the
-same writes still stored and still did not sound.
+same writes still stored and still did not sound. Once more after the unit moved to
+`6.21.5`, with the same result.
 
 So the frequency, Q and filter type live in the category `0x1010` established: **a store
 that acknowledges, persists, reports itself back faithfully, and is not on the way to the
@@ -985,11 +986,16 @@ fifteen minutes to an hour without being asked — the reason every session this
 with a silent radio has been fixed by Sennheiser, by accident, in the wrong direction for a
 bug report and the right one for measurement. The command surface is byte-identical on
 every id that carries a conclusion in this document, including the three that establish the
-absence of a parametric equaliser. What the update has *not* had is an ear in front of it:
-the finding that centre frequency, Q and filter type are stored and not heard belongs to
-6.21.1, and the one-line re-test on the new firmware is
+absence of a parametric equaliser.
+
+The finding with an ear in it was re-earned on the new firmware rather than inherited: the
+same test, +6 dB on band 0 with the centre at 90 Hz and then at 4 kHz, twelve seconds each,
+reported **"exactly the same"**. So frequency, Q and filter type are stored and unread on
+two firmware versions six weeks apart, which is a property of the product rather than of a
+build.
 
 ```
+momentum eq set 0 --gain 6 --freq 90   --hold 12
 momentum eq set 0 --gain 6 --freq 4000 --hold 12
 ```
 
