@@ -129,6 +129,15 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
+    /// Ask whether Windows will let this PC host the Sennheiser control service.
+    ///
+    /// Smart Control dials a headset by service UUID, so anything answering that UUID
+    /// is a headset as far as the app knows — which is the only route left to see what
+    /// the app *sends* rather than what the headset remembers. This asks Windows the
+    /// first question in that chain and stops there: it reserves the SDP record,
+    /// advertises nothing, leaves the machine undiscoverable, and does not contact the
+    /// headphones.
+    Host,
     /// Temporary listening test: write an ascending −6 … +6 dB tilt into the
     /// writable u16 store (`0x1010`), then read it back from the device and report
     /// whether it stuck. This is the store this host can write, and the one no ear
@@ -294,6 +303,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
+        Command::Host => Some(host()),
         Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -915,6 +925,14 @@ fn note(cmd: u16, payload: &[u8]) -> String {
     } else {
         format!("  ({hertz} Hz)")
     }
+}
+
+/// Report whether this machine could host the control service.
+#[cfg(windows)]
+fn host() -> Result<(), Boxed> {
+    println!("{}", momentum::host::probe(momentum::GAIA_SERVICE_UUID)?);
+    println!("nothing advertised, nothing connected; the provider is released here.");
+    Ok(())
 }
 
 /// Send read-only queries and print whatever answers.

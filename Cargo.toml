@@ -28,3 +28,7 @@ windows = { version = "0.62", features = [
     "Win32_System_Variant",
     "Win32_System_WinRT",
 ] }
+# The completion state of a WinRT async call lives in windows-future, not in the
+# `windows` crate's Foundation module, even though it is the `windows` crate that
+# returns those types — so naming `AsyncStatus` needs the direct dependency.
+windows-future = "0.3"

@@ -489,6 +489,7 @@ dependencies = [
  "futures",
  "tokio",
  "windows",
+ "windows-future",
 ]
 
 [[package]]

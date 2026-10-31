@@ -91,7 +91,7 @@ pub(crate) fn init_com() -> Result<()> {
 
 /// Parse a UUID. `windows_core::GUID` deliberately has no string parser, so
 /// this is the canonical form: 8-4-4-4-12 hex digits, braces optional.
-fn parse_guid(text: &str) -> Result<windows::core::GUID> {
+pub(crate) fn parse_guid(text: &str) -> Result<windows::core::GUID> {
     let digits: String = text
         .chars()
         .filter(|c| !matches!(c, '-' | '{' | '}' | ' '))
