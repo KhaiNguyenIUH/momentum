@@ -69,9 +69,13 @@ answers.
 | --- | --- |
 | `status` | Noise-control mode, ambient level, battery, bass boost, and the device line |
 | `info` | Product name, firmware version with build stamp, serial number |
-| `eq` | The eight bands and their gain in decibels; `--raw` adds the tables we cannot yet explain |
-| `eq-set <band> <dB>` | Move one band, read it back, and mean it: the change is stored and audible |
-| `eq-tune` | Interactive tuner: frequency, Q, filter type and gain, one keystroke each, `r` puts it all back |
+| `eq show` | Every band with its centre frequency, Q, filter type and gain in decibels; `--raw` adds the tables we cannot yet explain |
+| `eq gain <band> <dB>` | Move one band, read it back, and mean it: the change is stored and audible |
+| `eq freq <band> <Hz>` | Move a band's centre frequency. Acknowledged and stored; whether the audio path reads it is what the listening test decides |
+| `eq q <band> <Q>` | Set a band's Q, as a decimal — `0.71` is 1/√2, `12` is a narrow peak |
+| `eq type <band> <n>` | Set a band's filter type. An opaque enumeration nobody has published; `14` is what every band ships with |
+| `eq flat` | Zero every gain |
+| `eq tune` | Interactive tuner: one connection, an edit per keystroke, `r` puts the session's starting snapshot back |
 | `anc <on\|off>` | Noise cancelling |
 | `transparency <0..=100>` | Transparent-hearing level; `0` turns it off |
 | `bass <on\|off>` | Bass boost |
@@ -107,7 +111,7 @@ pushes, so a long-lived `watch` loop and a one-shot `status` share the same code
 
 ## Notes on real hardware
 
-- **The equaliser writes, after a week of the wrong payload shape.** `momentum eq-set 3 2.5`
+- **The equaliser writes, after a week of the wrong payload shape.** `momentum eq gain 3 2.5`
   sends `0x1001 [band, gain]` — one band, gain signed in tenths of a decibel — and prints
   what the headset reports back, which is the number that is stored. The id and its two-byte
   payload came from outside: Sennheiser's own app carries the command table as JSON, and

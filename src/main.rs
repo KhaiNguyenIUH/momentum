@@ -88,47 +88,9 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
-    /// Print the equaliser: every band and the value the headset stores for it, in
-    /// decibels. The scale is measured — ten units to the decibel, read back from a
-    /// ramp the phone app set — and the range is what the device itself reports.
-    Eq {
-        /// Select by service name or peer address; empty means any.
-        #[arg(long, default_value = "")]
-        filter: String,
-        /// Also print the raw tables the headset reports but this tool cannot
-        /// yet explain: `0x100b`, the u16 gain store, `0x100d`, `0x100f` and
-        /// `0x1013`. Their band index has never been connected to the app's
-        /// bands, so they are off by default rather than labelled carefully.
-        #[arg(long)]
-        raw: bool,
-    },
-    /// Move one equaliser band, in decibels, and read it back. Audible at once, and
-    /// the headset keeps the curve after power-off. Bands are numbered the way the
-    /// device numbers them, which is what `momentum eq` prints; the device refuses a
-    /// value outside its own range rather than this tool guessing where that range is.
-    ///
-    /// One caveat the headset enforces silently: the user equaliser is only heard in
-    /// the `userEq` audio mode. A write that lands while another mode is active is
-    /// real, stored, and inaudible until that mode is selected.
-    EqSet {
-        /// Band index, as `momentum eq` prints it.
-        band: u8,
-        /// Gain in decibels: `-3`, `2.5`, `0`. Stored in tenths. Negative values are
-        /// values, not options, so they are allowed to start with a minus sign.
-        #[arg(allow_hyphen_values = true)]
-        gain: f32,
-        /// Select by service name or peer address; empty means any.
-        #[arg(long, default_value = "")]
-        filter: String,
-    },
-    /// Type an edit, hear it, press `r` to put it all back. Reads the tables once and
-    /// writes each change on Enter, so the question "does this actually do anything?"
-    /// takes a keystroke instead of a rebuild.
-    EqTune {
-        /// Select by service name or peer address; empty means any.
-        #[arg(long, default_value = "")]
-        filter: String,
-    },
+    /// The equaliser: read the filter bank, or move one part of one band and hear it.
+    #[command(subcommand)]
+    Eq(EqAction),
     /// Interactive step-by-step listener, for experiments where a human is the one
     /// doing something physical. Registers the given features, prints what arrives,
     /// then waits: **press Enter to close a step** and start the next one, `q` to
@@ -310,6 +272,96 @@ enum Command {
     },
 }
 
+/// The subcommands of `momentum eq`. The verbs are the four things a band of this filter
+/// bank carries, named as the device names them on the wire.
+///
+/// Only `gain` has been confirmed audible by ear. `freq`, `q` and `type` are acknowledged
+/// and read back changed, which is a weaker claim than "they do something" — the wide gain
+/// store is already a table on this device that acknowledges, persists and stays silent.
+#[derive(Subcommand)]
+enum EqAction {
+    /// Print every band: centre frequency, Q, filter type and gain in decibels.
+    Show {
+        /// Also print the wide gain store and the `0x1013` state — writable, persistent,
+        /// and never yet heard to affect anything.
+        #[arg(long)]
+        raw: bool,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Move one band's gain, in decibels, and read it back. The one table whose effect on
+    /// the sound has been confirmed by ear; the headset keeps the curve after power-off.
+    ///
+    /// Only heard in the `userEq` audio mode, which is what a headset running its own
+    /// equaliser sits in. A write landing while another mode is active is real, stored,
+    /// and inaudible.
+    Gain {
+        /// Band index, as `momentum eq show` prints it.
+        band: u8,
+        /// Decibels: `-3`, `2.5`, `0`. Stored as signed tenths, so a leading minus is a
+        /// value and not an option.
+        #[arg(allow_hyphen_values = true)]
+        db: f32,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Set a band's centre frequency in hertz. Acknowledged, and the bank reports the new
+    /// value afterwards; whether the audio path reads it is what the listening test is for.
+    Freq {
+        /// Band index.
+        band: u8,
+        /// Hertz, 10 to 24000. A band with no gain has no sound to move, so raise one
+        /// with `eq gain` first if you are listening.
+        hz: u16,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Set a band's Q as a decimal: `0.71` is 1/√2, the value every band ships with except
+    /// the first, `12` is a narrow peak. Sent as Q12, which is what the app's own encoder
+    /// multiplies by.
+    Q {
+        /// Band index.
+        band: u8,
+        /// Q as a decimal, 0.05 to 16.
+        #[arg(allow_hyphen_values = true)]
+        q: f32,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Set a band's filter type: an opaque small integer, `14` on every band out of the
+    /// factory. Nobody has published the enumeration, so this is exploration — `show`
+    /// afterwards, and put it back with the number you started from.
+    #[command(visible_alias = "type")]
+    Kind {
+        /// Band index.
+        band: u8,
+        /// The type, 0 to 255.
+        kind: u8,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Zero every band's gain — the curve the factory ships, and the fastest way out of a
+    /// sound you no longer want.
+    Flat {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Interactive tuner: type an edit, hear it, `r` restores the snapshot taken at
+    /// start-up. One connection, so an edit lands in tens of milliseconds instead of the
+    /// second a fresh connection costs.
+    Tune {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+}
+
 fn main() -> Result<(), Boxed> {
     let cli = Cli::parse();
     // The RFCOMM commands are blocking WinRT calls; they never need a runtime.
@@ -356,9 +408,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::RfScan { filter, uuid } => Some(rf_scan(filter, uuid.as_deref())),
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
-        Command::Eq { filter, raw } => Some(eq(filter, *raw)),
-        Command::EqSet { band, gain, filter } => Some(eq_set(*band, *gain, filter)),
-        Command::EqTune { filter } => Some(eq_tune(filter)),
+        Command::Eq(action) => Some(eq(action)),
         Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
@@ -528,25 +578,78 @@ fn status(filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
-/// Move one equaliser band, then read it back, so the number printed is the number
+/// Move one band's gain, then read that band back, so the number printed is the number
 /// the headset is storing rather than the one we asked for.
 #[cfg(windows)]
-fn eq_set(band: u8, gain: f32, filter: &str) -> Result<(), Boxed> {
-    let tenths = (gain * 10.0).round();
-    if !gain.is_finite() || tenths.abs() > 127.0 {
-        return Err(format!("{gain} dB is not something a signed byte of tenths can hold").into());
+fn eq_gain(band: u8, db: f32, filter: &str) -> Result<(), Boxed> {
+    let tenths = (f64::from(db) * 10.0).round();
+    if !db.is_finite() || tenths.abs() > 127.0 {
+        return Err(format!("{db} dB is not something a signed byte of tenths can hold").into());
     }
     let mut session = open_session(filter)?;
     match session.set_eq_gain(band, tenths as i8)? {
         Some(read) => println!(
             "band {band}: asked for {:+.1} dB, the headset now reports {:+.1} dB.",
-            gain,
+            db,
             f32::from(read) / 10.0
         ),
         // Saying so beats reporting the value we wanted.
         None => println!("band {band}: the write was acked; the read-back carried no byte."),
     }
     println!("that is audible now, and the headset keeps the curve when it is switched off.");
+    Ok(())
+}
+
+/// Write one parameter of one band, then read the whole bank back.
+///
+/// The re-read is the point: the session drops its cached tables and re-registers the
+/// feature, so what prints is a fresh push from the headset. Without it, "band 0 now at
+/// 4000 Hz" would only mean that we asked. Note what the ack does and does not say — the
+/// store took the value; whether the audio path consults it is a matter for your ears,
+/// and the wide gain store is precedent that a writable table can be silent.
+#[cfg(windows)]
+fn eq_param(
+    band: u8,
+    what: String,
+    command: u16,
+    value: u16,
+    wide: bool,
+    filter: &str,
+) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    let bands = session.equaliser()?.bands();
+    if usize::from(band) >= bands {
+        return Err(format!("this equaliser describes {bands} bands, so there is no band {band}").into());
+    }
+    if wide {
+        session.eq_set_u16(command, band, value)?;
+    } else {
+        session.eq_set_u8(command, band, value as u8)?;
+    }
+    println!("band {band}: asked for {what}.");
+    session.forget_equaliser();
+    print_bank(&session.equaliser()?);
+    for warning in &session.warnings {
+        println!("note: {warning}");
+    }
+    Ok(())
+}
+
+/// Zero every gain, which is the factory curve and the way out of a sound you no longer
+/// want. Only the gains: the filter bank's frequencies, Qs and types are left alone,
+/// because nothing has established that resetting those is harmless.
+#[cfg(windows)]
+fn eq_flat(filter: &str) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    let bands = session.equaliser()?.bands();
+    if bands == 0 {
+        return Err("the headset sent no equaliser tables, so there is nothing to flatten".into());
+    }
+    for band in 0..bands as u8 {
+        session.eq_set_u8(cmd::SET_EQ_GAIN, band, 0)?;
+    }
+    session.forget_equaliser();
+    print_bank(&session.equaliser()?);
     Ok(())
 }
 
@@ -733,20 +836,52 @@ fn eq_tune(filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
-/// The equaliser as one table. The `dB` column is calibrated; the rest are raw
-/// values whose units the wire has not established, including the device's own
-/// band table, which disagrees with the app about where the bands are.
+/// The equaliser commands: one connection per invocation, and every write prints the
+/// bank as the headset reported it afterwards rather than as the request asked for it.
 #[cfg(windows)]
-fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
-    let mut session = open_session(filter)?;
-    let eq = session.equaliser()?;
-    if eq.is_empty() {
-        println!("the headset sent no equaliser tables");
-        for warning in &session.warnings {
-            println!("note: {warning}");
+fn eq(action: &EqAction) -> Result<(), Boxed> {
+    match action {
+        EqAction::Show { raw, filter } => eq_show(filter, *raw),
+        EqAction::Gain { band, db, filter } => eq_gain(*band, *db, filter),
+        EqAction::Freq { band, hz, filter } => eq_param(
+            *band,
+            format!("frequency {hz} Hz"),
+            cmd::SET_EQ_FREQUENCY,
+            *hz,
+            true,
+            filter,
+        ),
+        EqAction::Q { band, q, filter } => {
+            if !q.is_finite() || !(0.05..=16.0).contains(q) {
+                return Err(format!("{q} is not a Q between 0.05 and 16").into());
+            }
+            eq_param(
+                *band,
+                format!("Q {q}"),
+                cmd::SET_EQ_Q,
+                (f64::from(*q) * 4096.0).round() as u16,
+                true,
+                filter,
+            )
         }
-        return Ok(());
+        EqAction::Kind { band, kind, filter } => eq_param(
+            *band,
+            format!("filter type {kind}"),
+            cmd::SET_EQ_FILTER_TYPE,
+            u16::from(*kind),
+            false,
+            filter,
+        ),
+        EqAction::Flat { filter } => eq_flat(filter),
+        EqAction::Tune { filter } => eq_tune(filter),
     }
+}
+
+/// One row per band, in the units the device itself uses. Only `dB` is calibrated; the
+/// frequency, Q and type are the device's own numbers, printed as numbers rather than
+/// converted into an interpretation of them.
+fn print_bank(eq: &momentum::proto::state::Equaliser) {
+    use momentum::APP_BANDS_HZ;
 
     let cell = |row: &[Option<u16>], band: usize| {
         row.get(band).copied().flatten().map_or_else(
@@ -754,8 +889,6 @@ fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
             |value| value.to_string(),
         )
     };
-    use momentum::APP_BANDS_HZ;
-
     let db = eq.gains_db();
     let q = |band: usize| {
         eq.q12
@@ -765,10 +898,8 @@ fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
             .map_or_else(|| "-".to_string(), |raw| format!("{:.3}", f64::from(raw) / 4096.0))
     };
     // Two frequency columns, because the two disagree and nothing on the wire says
-    // which one the sliders are named after. `eq-set` and `eq-tune` take the band
-    // **index**, which both tables agree on; the hertz are here so a reader can find the
-    // slider. `Hz`, `Q` and `type` are the filter bank the DSP describes, writable
-    // through `0x100a`, `0x100c` and `0x100e`.
+    // which one the sliders are named after. The write commands take the band **index**,
+    // which both tables agree on; the hertz are here so a reader can find the slider.
     println!(
         "{:<4} {:>8}  {:>8}  {:>7}  {:>5}  {:>6}",
         "band", "app/Hz", "Hz", "Q", "type", "dB"
@@ -793,6 +924,21 @@ fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
          1/√2. Nothing here claims the audio path reads the frequency, Q or type: all \
          three are writable and answer an ack, which is all that is known."
     );
+}
+
+/// The equaliser as the headset reports it, and the tables it cannot explain.
+#[cfg(windows)]
+fn eq_show(filter: &str, raw: bool) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    let eq = session.equaliser()?;
+    if eq.is_empty() {
+        println!("the headset sent no equaliser tables");
+        for warning in &session.warnings {
+            println!("note: {warning}");
+        }
+        return Ok(());
+    }
+    print_bank(&eq);
 
     // The wide gain store is a table of its own again: writable, range-checked, durable,
     // never once touched by the app. It keeps a heading because it belongs to no control

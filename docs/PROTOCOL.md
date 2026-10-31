@@ -307,7 +307,7 @@ just reported, so nothing changed:
 - `0x100e [00, 00, 0e]` → **refused `[05]`**: not every even id is writable, and the
   frequencies and limits are read-only, which is the right way round.
 
-Still missing before `momentum eq` can take decibels instead of raw bytes: the
+Still missing before `momentum eq gain` can take decibels instead of raw bytes: the
 **scale and sign of a gain byte** (is `01` = 0.5 dB? is the range ±14, given the
 limit row?) and whether `0x1002` takes `(band, gain)` — eight bytes were refused
 where one byte was accepted. Both need one audible write, which is easy to undo
@@ -868,8 +868,8 @@ client: it survived 140 payload variants, and the ids around it accept writes.
 one that never asked. Proven by moving a band and putting it back:
 
 ```
-momentum eq-set 3 2.0   →  0x1082 [3c, 0b, c4, 14, 0a, 14, f6, 0a]    band 3 = +2.0 dB
-momentum eq-set 3 0     →  0x1082 [3c, 0b, c4, 00, 0a, 14, f6, 0a]    restored
+momentum eq gain 3 2.0   →  0x1082 [3c, 0b, c4, 14, 0a, 14, f6, 0a]    band 3 = +2.0 dB
+momentum eq gain 3 0     →  0x1082 [3c, 0b, c4, 00, 0a, 14, f6, 0a]    restored
 ```
 
 One band reads as `0x1002 [band]` → `0x1102 [gain]`. The device's own limits come from
@@ -916,6 +916,11 @@ times the ±6 dB the interface allows — and Smart Control Plus's audio-mode li
 carries a parametric equaliser that its own app declines to show, or carries the filter
 plumbing for a sibling product, is settled by moving one band somewhere audible, which is a
 deliberate change and so waits on a person who owns the headphones.
+
+All three parameters are on the command line now, as `momentum eq freq`, `eq q` and
+`eq type`. Each re-reads the bank before printing it: the session drops its cached tables
+after a write, because this device pushes them only when a client registers the feature,
+and a read-back served out of our own cache would prove nothing.
 
 ## Names borrowed from Sennheiser's own device model — and where to distrust them
 

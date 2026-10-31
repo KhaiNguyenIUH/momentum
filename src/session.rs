@@ -263,8 +263,18 @@ impl<L: Link> Session<L> {
             payload.extend_from_slice(&(*gain as u16).to_be_bytes());
         }
         self.request(cmd::SET_EQ_GAIN_WIDE, payload, DEFAULT_TIMEOUT)?;
-        self.state.eq = Equaliser::default();
+        self.forget_equaliser();
         self.equaliser()
+    }
+
+    /// Drop this session's copy of the equaliser tables.
+    ///
+    /// The device pushes those tables when a client registers the feature, and not
+    /// again on request, so a session that has just written one holds its own last
+    /// answer rather than the device's. Forgetting is the only way a read-back after a
+    /// write can mean anything.
+    pub fn forget_equaliser(&mut self) {
+        self.state.eq = Equaliser::default();
     }
 
     /// Write a value, then read it back so callers see confirmed state.
