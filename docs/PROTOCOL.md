@@ -587,6 +587,34 @@ has already made twice.
 query there with a command id rather than a registration — the next sweep, done the
 same careful way.
 
+## A claimed command table, tested
+
+A language model was asked for the equaliser commands and produced a tidy table:
+`0x1A0A` to read the current curve with no payload, `0x1A08` as a "preview" write,
+`0x1A09` as "commit to flash", payload `slot` followed by eight `i8` tenths of a
+decibel bass-to-treble. Asked on the hardware rather than argued with, it scored:
+
+| claim | result on firmware 6.21.1 |
+| --- | --- |
+| payload format: slot byte, then eight `i8` gains at **ten per decibel**, bass → treble | **correct** — indistinguishable from what was measured here independently, including the two's-complement examples `35 → 0x23`, `−20 → 0xEC` |
+| service UUID `A2129FF3-081B-4C45-8AFE-469D9C4842EC` | correct, it is what this tool connects to |
+| `0x1A0A` reads the curve, no payload | **refused `01`**, and again with an index byte. No nine-byte report |
+| `0x1A09` commits to flash | refuses `01`, with and without an index byte |
+| `0x1A08` previews a curve | refuses `01`. Sent the current curve — `00 e2 14 f6 00 00 14 0a 0a` — so that even success would have changed nothing; the curve read back byte-identical either way |
+
+Worth noting what the refusals are *not*: they are `01`, unexpected code, rather than
+`05`, not supported, and `0x1A05` in the same block works fine as `get_anc`. Those
+command slots exist in the dispatch table and are rejecting the request, which is not
+the same as there being nothing there — it means a payload length or sub-code we have
+not found. The equaliser write is still unfound.
+
+The pattern behind the score is worth keeping too: everything the answer got right
+was the part a model could have read off a description of the product, and everything
+it got wrong was a specific number it presented without a source. Ten per decibel and
+eight bass-to-treble bands were already measured here; the command ids were invented
+in the confident shape of measured ids, and the table's formatting made them look like
+they came from somewhere.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
