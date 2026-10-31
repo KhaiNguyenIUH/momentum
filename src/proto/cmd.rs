@@ -293,6 +293,11 @@ pub fn name(cmd: u16) -> &'static str {
     match cmd {
         REGISTER_FEATURE => "register_feature",
         0x0107 => "register_ack",
+        // An error frame naming command 0x0000 in the core feature. Seen from a MOMENTUM 5
+        // in reply to a feature-4 getter (`0x080d` smart pause) that this generation does not
+        // implement: the numbering promises `0x098d`, and the firmware sends this instead.
+        // Named for what the bits say, not for a meaning it may not have.
+        0x0180 => "core_error",
         GET_CHARGING => "get_charging",
         GET_BATTERY => "get_battery",
         0x0702 => "charging_reply",
