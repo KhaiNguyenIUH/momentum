@@ -16,9 +16,13 @@ tokio = { version = "1", features = ["rt", "time"] }
 # Win32_Media_Audio from ..._Endpoints, Win32_System_Com from
 # ..._StructuredStorage. Win32_System_Variant looks unrelated but is required:
 # IMMDevice::Activate is compiled only with Variant *and* StructuredStorage on.
+# Foundation is named on its own despite Foundation_Collections being on: the
+# collection feature does not compile Foundation's own items, and the event handler
+# a listener subscribes with is one of them.
 windows = { version = "0.62", features = [
     "Devices_Bluetooth_Rfcomm",
     "Devices_Enumeration",
+    "Foundation",
     "Foundation_Collections",
     "Media_Devices",
     "Networking_Sockets",

@@ -137,7 +137,19 @@ enum Command {
     /// first question in that chain and stops there: it reserves the SDP record,
     /// advertises nothing, leaves the machine undiscoverable, and does not contact the
     /// headphones.
-    Host,
+    Host {
+        /// Bind the service, advertise it, make the radio discoverable and wait for a
+        /// client — the phone in other words, which has to be paired with this PC
+        /// first. Every frame it sends is printed. Stop with Ctrl-C; stopping drops
+        /// the provider and the advertising goes with it.
+        #[arg(long)]
+        serve: bool,
+        /// Name published in the service record, so there is something to tap on the
+        /// phone. The paired device's own name is this computer's, which we cannot
+        /// change from here.
+        #[arg(long, default_value = "MOMENTUM 5")]
+        name: String,
+    },
     /// Temporary listening test: write an ascending −6 … +6 dB tilt into the
     /// writable u16 store (`0x1010`), then read it back from the device and report
     /// whether it stuck. This is the store this host can write, and the one no ear
@@ -303,7 +315,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
-        Command::Host => Some(host()),
+        Command::Host { serve, name } => Some(host(*serve, name)),
         Command::Watch { seconds, filter, raw } => Some(watch(*seconds, filter, *raw)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -927,9 +939,14 @@ fn note(cmd: u16, payload: &[u8]) -> String {
     }
 }
 
-/// Report whether this machine could host the control service.
+/// Report whether this machine could host the control service, and on `--serve`,
+/// actually host it and log whatever arrives.
 #[cfg(windows)]
-fn host() -> Result<(), Boxed> {
+fn host(serve: bool, name: &str) -> Result<(), Boxed> {
+    if serve {
+        return momentum::host::serve(&momentum::host::Serve { name, replies: &[] })
+            .map_err(Into::into);
+    }
     println!("{}", momentum::host::probe(momentum::GAIA_SERVICE_UUID)?);
     println!("nothing advertised, nothing connected; the provider is released here.");
     Ok(())

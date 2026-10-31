@@ -77,6 +77,8 @@ answers.
 | `mute [on\|off]` | Mute that endpoint; the level survives it |
 | `watch [--seconds N] [--raw]` | Live state pushes, decoded or raw |
 | `probe [--cmd 1A05 --payload 01 --vendor 495]` | Send queries, print answers; the reverse-engineering tool |
+| `steps [--script wear\|buttons] [--out file]` | Listener you drive by hand: it names the state to put the headphones in, waits for Enter, and attributes every frame to that step |
+| `host [--serve]` | Ask whether Windows will let this PC hold the control service — and with `--serve`, hold it, advertise it and log whatever a client sends |
 | `rf-scan [--uuid …]` | List paired devices publishing an RFCOMM control service |
 | `scan`, `gatt` | Bluetooth LE probes, for headsets that expose control over GATT instead |
 
