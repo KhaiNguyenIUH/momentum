@@ -665,6 +665,35 @@ is attributed to a guess. With features `02 04 0b 10 1b` registered on firmware
 | on again | `[03]` |
 | off, then the power button | `[02]`, then the channel closed |
 
+The frame is **pushed twice** per transition into `[02]` and once per transition into
+`[03]` — four minutes of a passive listener show `t+0 [03]`, `t+150.7 [02]×2`, `t+219.2
+[03]`, `t+237.4 [02]×2`. So a count of frames is not a count of events, and any client that
+counts `0x0482` will see twice as many departures as arrivals.
+
+That capture also raises something this document has no answer for, and records it as
+unattributed rather than resolved. The listener was not asked whether the headphones stayed
+on their head for those four minutes. If they did, the sensor reported "not on head" twice
+and once held for only eighteen seconds — with wear detection on and smart pause on, each
+false `[02]` also stops the music, which is a plausible mechanism for the disappearances
+this session kept attributing to the 900-second timer. If they did not, the sensor was
+correct all four minutes and the mechanism is somewhere else. The frame cannot tell these
+apart; only the person wearing them can, and they were not asked at the time.
+
+Ask them the same question with the tool doing the writing and it stops being a memory
+test: `steps --features 02 --out wear.txt`, sit still for five minutes, press Enter every
+twenty seconds, and read the transcript afterwards. If `[02]` appears with the headphones
+warm and on ears, it is a defect with a timestamp on it, worth reporting, and fixable in
+the meantime — wear detection is a setting on the wire, `0x0400 [00]`, and smart pause is
+`0x080c [00]`, so either can simply be switched off once the diagnosis is firm. Both writes
+are untested here, which is the honest reason they are suggestions rather than commands in
+the tool. Their ids are the confirmed getter pattern of their own features — wear detection
+reads at `0x0401`, smart pause at `0x080d`, and the family's rule is that the setter sits
+one below the getter — but neither setter has been sent on this unit, so treat them as
+predicted rather than live. Two ways to be certain before trusting either: read `0x0402` and
+`0x080c` after the write, since a setting that took changes what it reports; and press a
+play button while nothing is playing, because smart pause is the one setting of the two
+whose truth is audible.
+
 Six for six, both directions, with nothing else on five subscribed features moving —
 including all nine frames of feature `0x04`, which reported once and then never again
 whether the headphones were worn or not. So `stability_push` is not a wear sensor, and
