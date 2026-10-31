@@ -947,6 +947,7 @@ fn host(serve: bool, name: &str) -> Result<(), Boxed> {
         return momentum::host::serve(&momentum::host::Serve { name, replies: &[] })
             .map_err(Into::into);
     }
+    println!("{}.", momentum::host::adapter_summary());
     println!("{}", momentum::host::probe(momentum::GAIA_SERVICE_UUID)?);
     println!("nothing advertised, nothing connected; the provider is released here.");
     Ok(())

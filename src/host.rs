@@ -15,6 +15,7 @@ use crate::proto::frame::FrameKind;
 use crate::{Frame, GAIA_SERVICE_UUID};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+use windows::Devices::Bluetooth::BluetoothAdapter;
 use windows::Devices::Bluetooth::Rfcomm::{RfcommServiceId, RfcommServiceProvider};
 use windows::Foundation::TypedEventHandler;
 use windows::Networking::Sockets::{
@@ -63,6 +64,38 @@ fn settle(operation: &impl Pollable, what: &str) -> Result<()> {
             };
         }
         std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// What the radio itself claims.
+///
+/// "The phone cannot see us" has two very different causes — the machine is not
+/// advertising, or the adapter was never able to — and this separates them without a
+/// second device in the room.
+pub fn adapter_summary() -> String {
+    let operation = match BluetoothAdapter::GetDefaultAsync() {
+        Ok(operation) => operation,
+        Err(e) => return format!("the bluetooth adapter could not be queried: {e}"),
+    };
+    if settle(&operation, "GetDefaultAsync").is_err() {
+        return "the adapter query never finished".to_string();
+    }
+    let adapter = match operation.GetResults() {
+        Ok(adapter) => adapter,
+        Err(e) => return format!("no bluetooth adapter: {e}"),
+    };
+    format!(
+        "the adapter {} the peripheral role and {} the central role",
+        yes_no(adapter.IsPeripheralRoleSupported()),
+        yes_no(adapter.IsCentralRoleSupported())
+    )
+}
+
+fn yes_no(answer: windows::core::Result<bool>) -> &'static str {
+    match answer {
+        Ok(true) => "supports",
+        Ok(false) => "does not support",
+        Err(_) => "was asked about",
     }
 }
 
@@ -115,6 +148,7 @@ pub struct Serve<'a> {
 /// This makes the machine discoverable. It is reversible by stopping the command,
 /// which drops the provider and stops advertising.
 pub fn serve(options: &Serve) -> Result<()> {
+    println!("{}.", adapter_summary());
     let id = service_id(GAIA_SERVICE_UUID)?;
     let provider = {
         let operation = RfcommServiceProvider::CreateAsync(&id)
