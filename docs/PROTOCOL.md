@@ -52,6 +52,16 @@ cost real time to get right and are worth repeating:
    `NonNull`, so all socket handles live on one worker thread which is fed
    through channels. `RoInitialize(RO_INIT_MULTITHREADED)` must be called on that
    thread too.
+4. **Exactly one control connection, and reconnecting fast makes it worse.** A
+   second attempt while one is open fails on *both* published server channels with
+   `0x80070490`, not just the busy one, so a client that pins a channel and retries
+   it will conclude the headset has vanished. Reconnect churn — a fresh connection
+   every couple of seconds — was seen to stop the second poll onward from
+   connecting at all, for roughly half a minute, and then recover by itself, while
+   the same command run from separate processes three to eight seconds apart
+   connected every time. So: hold one connection across a batch of writes, which is
+   why `eq set` carries several parameters and `eq tune` keeps a session, and do not
+   poll faster than a few seconds if you must poll.
 
 Enumerating is safe and read-only: nothing is written until a command is sent.
 
