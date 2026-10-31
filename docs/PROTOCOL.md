@@ -924,12 +924,31 @@ pushes the same three tables in the same shape: 90, 325, 1500, 6500, 6500 Hz, Q 
 0.71, type 14 — five bands for five sliders, where the MOMENTUM 5 reports eight for eight.
 
 So these are not a concealed parametric equaliser. A slider *is* a biquad, the device
-publishes its biquads, and that they are writable says about that much. What stays genuinely
-open is narrower: whether the audio path reads what is written into them or recomputes the
-filters from its own table at load. `0x1010` is the precedent for the pessimistic answer — a
-table that acknowledges, persists and stays silent — and only listening distinguishes them:
-raise one band, move its centre frequency, hear whether the peak moves. `momentum eq gain`
-followed by `momentum eq freq` does exactly that.
+publishes its biquads, and that they are writable says about that much. The narrower
+question — whether the audio path reads what is written into them or rebuilds the filters
+from its own table — has now been answered by ear, and the answer is the pessimistic one.
+
+### What the ear says about the filter bank
+
+Band 0 carries a gain the ear can place: raised to +6 dB it is an unmistakable lift at the
+bottom, and it is the one parameter this device has never failed to honour. So put +6 dB on
+band 0, move its centre from the factory 90 Hz out to 4 kHz, and ask whether the lift moves
+with it.
+
+It does not. Twice, on separate sittings, with the frequency at 4 kHz and the Q widened and
+narrowed, the +6 dB stayed exactly where it had been — and the bank in between read back
+`4000 Hz`, `Q 1.200`, exactly as sent, acknowledged by `0x110a` and `0x110c` and re-read
+from the device rather than echoed from the request. Sent singly, outside any batch, the
+same writes still stored and still did not sound.
+
+So the frequency, Q and filter type live in the category `0x1010` established: **a store
+that acknowledges, persists, reports itself back faithfully, and is not on the way to the
+ears.** Gains are the exception and the only exception measured — which makes the Momentum 5
+what its screen says it is, an eight-band graphic equaliser with fixed centres and fixed Q,
+and makes `momentum eq freq`, `eq q` and `eq type` commands that edit a table nothing in the
+audio path reads. That is worth knowing before anyone tunes by ear with them; the commands
+stay, because the store is real, the app reads something out of it, and the type field is
+still an unopened envelope.
 
 The wide gain store is still unexplained, and one more unit deserves taking seriously.
 `0x1010` accepts gains to **±180** and refuses 182. Read in the tenths the sliders use that

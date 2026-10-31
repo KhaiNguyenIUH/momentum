@@ -315,6 +315,13 @@ enum EqAction {
     ///
     /// `momentum eq set 0 --gain 6 --hold 12` is the entire biquad test. Without
     /// `--hold` the change stays, as with the single-parameter commands.
+    ///
+    /// Of the four, only `--gain` has been heard to change the sound. `--freq`, `--q` and
+    /// `--type` are stored, acknowledged and read back exactly as written, and reached
+    /// nothing audible when tested against a +6 dB band.
+    ///
+    /// One caution: run one hold at a time. A second process reads the *live* values as
+    /// what to restore to, so two overlapping holds restore each other's changes.
     Set {
         /// Band index, as `momentum eq show` prints it.
         band: u8,
@@ -356,8 +363,13 @@ enum EqAction {
         #[arg(long, default_value = "")]
         filter: String,
     },
-    /// Set one band's frequency, in hertz. Acknowledged, and the bank reports the new
-    /// value afterwards; whether the audio path reads it is what the listening test is for.
+    /// Set one band's frequency, in hertz.
+    ///
+    /// Stored, acknowledged, and re-read exactly as written — and not heard. With +6 dB on
+    /// a band, moving it from 90 Hz to 4 kHz and back made no difference, twice over, on
+    /// two different days. The audio path builds its filters from its own table; what this
+    /// command writes is what the read-back reports, which is worth knowing before you try
+    /// to tune by ear.
     Freq {
         /// Band index.
         band: u8,
@@ -371,6 +383,8 @@ enum EqAction {
     /// Set a band's Q as a decimal: `0.71` is 1/√2, the value every band ships with except
     /// the first, `12` is a narrow peak. Sent as Q12, which is what the app's own encoder
     /// multiplies by.
+    ///
+    /// Stored and read back like the frequency, and measured the same way: not heard.
     Q {
         /// Band index.
         band: u8,
@@ -384,6 +398,10 @@ enum EqAction {
     /// Set a band's filter type: an opaque small integer, `14` on every band out of the
     /// factory. Nobody has published the enumeration, so this is exploration — `show`
     /// afterwards, and put it back with the number you started from.
+    ///
+    /// Stored and read back like the frequency and Q. Those two were listened for and were
+    /// not there; the type has not been listened for, and there is no reason to expect it
+    /// to be read by an audio path that ignores its neighbours.
     #[command(visible_alias = "type")]
     Kind {
         /// Band index.
@@ -401,9 +419,16 @@ enum EqAction {
         #[arg(long, default_value = "")]
         filter: String,
     },
-    /// Interactive tuner: type an edit, hear it, `r` restores the snapshot taken at
-    /// start-up. One connection, so an edit lands in tens of milliseconds instead of the
-    /// second a fresh connection costs.
+    /// Interactive tuner: type an edit, `r` restores the snapshot taken at start-up. One
+    /// connection, so an edit lands in tens of milliseconds instead of the second a fresh
+    /// connection costs.
+    ///
+    /// What you can tune is one-dimensional. Gains are the parameter measured to reach the
+    /// ears; frequency, Q and filter type are accepted, stored and read back exactly as
+    /// written, and were not heard when tested against a band carrying +6 dB. So `f`, `q`
+    /// and `t` shape what `eq show` reports rather than what you hear — the keys stay
+    /// because the store is real, and someone will eventually find out what the type field
+    /// is for.
     Tune {
         /// Select by service name or peer address; empty means any.
         #[arg(long, default_value = "")]

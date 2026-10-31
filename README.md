@@ -72,8 +72,8 @@ answers.
 | `eq show` | Every band with its centre frequency, Q, filter type and gain in decibels; `--raw` adds the tables we cannot yet explain |
 | `eq set <band> [--gain 6] [--freq 4000] [--q 0.5] [--type 14] [--hold 12]` | One connection, several parameters, and a counted undo — the form for listening: `eq set 0 --gain 6 --hold 12` |
 | `eq gain <band> <dB>` | Move one band, read it back, and mean it: the change is stored and audible |
-| `eq freq <band> <Hz>` | Move a band's centre frequency. Acknowledged and stored; whether the audio path reads it is what the listening test decides |
-| `eq q <band> <Q>` | Set a band's Q, as a decimal — `0.71` is 1/√2, `12` is a narrow peak |
+| `eq freq <band> <Hz>` | Move a band's centre frequency. Stored, acknowledged, read back exactly — and **not heard**: with +6 dB on a band, 90 Hz and 4 kHz sounded the same twice over |
+| `eq q <band> <Q>` | Set a band's Q, as a decimal — `0.71` is 1/√2, `12` is a narrow peak. Stored, not heard, like the frequency |
 | `eq type <band> <n>` | Set a band's filter type. An opaque enumeration nobody has published; `14` is what every band ships with |
 | `eq flat` | Zero every gain |
 | `eq tune` | Interactive tuner: one connection, an edit per keystroke, `r` puts the session's starting snapshot back |
@@ -133,6 +133,11 @@ pushes, so a long-lived `watch` loop and a one-shot `status` share the same code
   sounded like a different tuning turned out to be the **bass boost** sub-mode, which belongs
   to `userEq` and stops applying in any other mode. `momentum bass off` and the two modes are
   indistinguishable.
+- **Only the gains reach the ears.** Put +6 dB on a band and move its centre from 90 Hz to
+  4 kHz: the lift does not move. The frequency, Q and filter type are stored, acknowledged
+  and read back exactly as written, and the audio path does not use them — so this is an
+  eight-band graphic equaliser with fixed centres, whatever its command set implies. The
+  commands remain because the store is real and the app reads something out of it.
 - **Volume is not a headset command.** It travels over AVRCP as "absolute
   volume", and Windows owns that negotiation, so `momentum volume` sets the
   endpoint's master volume — the tray slider's own path, which for Bluetooth
