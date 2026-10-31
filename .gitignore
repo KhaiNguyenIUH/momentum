@@ -1,6 +1,5 @@
 /target
 /.cargo
-# step-listener transcripts: measured data, kept out of the repo by name so a run
-# cannot be committed by an indiscriminate `git add -A`
-/wear.txt
-/buttons.txt
+# step-listener transcripts: measured data, ignored so a run cannot be swept into a
+# commit by an indiscriminate `git add -A`. Nothing at the root is a .txt file.
+/*.txt

@@ -181,6 +181,14 @@ pub const PUSH_EQ_GAIN_WIDE: u16 = 0x1091;
 /// See [`PUSH_EQ_GAINS`].
 pub const PUSH_EQ_STATE: u16 = 0x1093;
 
+/// The sample rate of the live audio link, four bytes big-endian.
+///
+/// Measured by playing from a phone and pausing again: `48000` while Qobuz streamed,
+/// `44100` at rest, `0` for the few hundred milliseconds the link spends being
+/// renegotiated. The at-rest `44100` is not silence — it is the idle A2DP link to the
+/// PC, which is Windows' default output. Live on MOMENTUM 5, firmware 6.21.1.
+pub const PUSH_SAMPLE_RATE: u16 = 0x089A;
+
 /// Read the serial number. The payload of the reply is ASCII digits.
 ///
 /// This one belongs to the **Sennheiser** vendor namespace: under Qualcomm's
@@ -268,7 +276,13 @@ pub fn name(cmd: u16) -> &'static str {
         // on, and nothing at all from the app. Whether that is wear or simply the
         // unit being in use is not settled — see docs/PROTOCOL.md.
         0x0482 => "unit_state_push",
-        0x0880 => "stability_push",
+        // Not stability. The name came from the published numbering and was never
+        // checked; it moves with the audio stream instead — `02` at rest on a 44.1 kHz
+        // link, `ff` for the moment the link is renegotiated, `08` while a phone
+        // streamed at 48 kHz. What the values mean is still unknown, so the name says
+        // only that it belongs to the link.
+        0x0880 => "audio_link_push",
+        PUSH_SAMPLE_RATE => "sample_rate_push",
         0x1A81 => "mode_list_push",
         0x2C83 => "wear_push",
         _ => "unknown",

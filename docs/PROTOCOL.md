@@ -675,6 +675,47 @@ pauses without anyone taking anything off. A second tell is that `0x2C83`, which
 tool has long called `wear_push` on the strength of the published naming scheme, never
 appeared — its feature is `0x2C`, outside the `01`–`1f` range ever swept.
 
+## The nine frames of feature `0x04` are the audio stream
+
+They looked inert — nine tables at registration, unmoved by wear, by power cycling, by
+the app. The missing stimulus was **audio**. Playing from a phone with
+`steps --features 04` produced this, timestamps from `audio.txt`:
+
+```
+at rest          0x0880 [02]   0x089a [00, 00, ac, 44]
+phone plays      0x0880 [ff]   0x089a [00, 00, 00, 00]      link torn down
+                 0x208a [02]                                feature 0x10, at the change
+                 0x0880 [08]   0x089a [00, 00, bb, 80]      link back, streaming
+phone pauses     0x0880 [ff]   0x089a [00, 00, 00, 00]
+                 0x208a [02]
+                 0x0880 [02]   0x089a [00, 00, ac, 44]      back to the idle link
+```
+
+`0x089a` is the **sample rate**, four bytes big-endian: `0xAC44` = 44100, `0xBB80` =
+48000, and zero while the link is renegotiating. Two values that mean nothing except
+one thing, from a stream nobody chose the rate for — this is the frame that says what
+the audio link is doing, and `steps` now prints it as `48000 Hz` rather than as bytes.
+The `44100` at rest is not a phantom: the PC is Windows' default output and keeps an
+idle A2DP link at CD rate, which is what the headset reports when nothing is playing.
+
+`0x0880` has been renamed from `stability_push`, a name inherited from the published
+numbering and never checked. What is known is that it belongs to the stream — `02`
+while the idle 44.1 kHz link stood there, `ff` for the hundred-odd milliseconds of
+renegotiation, `08` while the phone streamed 48 kHz — and that its values are not
+understood. Codec, quality setting, or link state; the bytes do not say, and this
+document has been wrong before by picking an answer.
+
+**Ruled out by the same run:** none of it is volume. The Windows slider for the
+headphones moved from 20 % to 40 % and back with the headphones as the default output,
+and the phone's own volume moved as well, with **no frame at all** in reply. `0x0896`,
+which had drifted between 72, 100 and 66 over the day and was the obvious candidate,
+did not budge.
+
+**Not settled:** playing from the PC produced no frames, while playing from the phone
+produced the burst above. Either Windows' stream did not start when expected, or the
+PC's link was already the 44100 that was being reported anyway, and this run cannot
+tell those apart.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.

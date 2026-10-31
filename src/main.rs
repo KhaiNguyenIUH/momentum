@@ -858,12 +858,13 @@ fn steps(
         if let Some(frame) = polled {
             since += 1;
             say(&format!(
-                "  t+{:6.1}s  << vendor 0x{:04x}  0x{:04x} {:<22} {:02x?}",
+                "  t+{:6.1}s  << vendor 0x{:04x}  0x{:04x} {:<22} {:02x?}{}",
                 started.elapsed().as_secs_f32(),
                 frame.vendor,
                 frame.cmd,
                 momentum::cmd::name(frame.cmd),
                 frame.payload,
+                note(frame.cmd, &frame.payload),
             ));
             continue;
         }
@@ -893,6 +894,26 @@ fn steps(
     }
     say(&format!("quit after {step} step(s); {}", momentum::Link::diagnostics(&link)));
     Ok(())
+}
+
+/// What a payload is known to say, appended to a printed frame when anything is.
+///
+/// Only the sample rate is known this well: its four bytes, big-endian, were 48000
+/// while a phone streamed and 44100 at rest, and no other frame in this project has
+/// been pinned down that cleanly. Everything else prints as bytes, on purpose.
+#[cfg(windows)]
+fn note(cmd: u16, payload: &[u8]) -> String {
+    if cmd == momentum::cmd::PUSH_SAMPLE_RATE {
+        if let Ok(bytes) = <[u8; 4]>::try_from(payload) {
+            let hertz = u32::from_be_bytes(bytes);
+            return if hertz == 0 {
+                "  (no stream)".to_string()
+            } else {
+                format!("  ({hertz} Hz)")
+            };
+        }
+    }
+    String::new()
 }
 
 /// Send read-only queries and print whatever answers.
@@ -959,11 +980,12 @@ fn probe(
                 Some(frame) => {
                     replies += 1;
                     println!(
-                        "<< vendor 0x{:04x}  0x{:04x} {:<22} {:02x?}",
+                        "<< vendor 0x{:04x}  0x{:04x} {:<22} {:02x?}{}",
                         frame.vendor,
                         frame.cmd,
                         momentum::cmd::name(frame.cmd),
                         frame.payload,
+                        note(frame.cmd, &frame.payload),
                     );
                 }
                 None => continue,
@@ -1300,5 +1322,26 @@ fn annotate(value: &[u8]) -> String {
             format!("  <- GAIA {} ({:#06x})", cmd::name(frame.cmd), frame.cmd)
         }
         _ => String::new(),
+    }
+}
+
+#[cfg(all(windows, test))]
+mod tests {
+    use super::note;
+
+    #[test]
+    fn the_sample_rate_frame_is_read_big_endian() {
+        let rate = momentum::cmd::PUSH_SAMPLE_RATE;
+        assert_eq!(note(rate, &[0x00, 0x00, 0xac, 0x44]), "  (44100 Hz)");
+        assert_eq!(note(rate, &[0x00, 0x00, 0xbb, 0x80]), "  (48000 Hz)");
+        assert_eq!(note(rate, &[0x00, 0x00, 0x00, 0x00]), "  (no stream)");
+    }
+
+    #[test]
+    fn nothing_else_claims_a_meaning() {
+        // The link frame moves with the stream but its values are not understood, so
+        // it stays bytes, and a payload of the wrong length says nothing at all.
+        assert_eq!(note(0x0880, &[0x08]), "");
+        assert_eq!(note(momentum::cmd::PUSH_SAMPLE_RATE, &[0x00, 0x00]), "");
     }
 }
