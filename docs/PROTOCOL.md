@@ -463,17 +463,26 @@ through the phone's Bluetooth being switched off. **`0x1010` accepts the entire
 24-byte table in a single frame**, which `0x1002` never did: one byte, a `(band,
 gain)` pair and a full eight bytes were all refused there.
 
-The byte store did not survive. It had been read as the app's saved `−6 … +1` ramp
-while the phone was connected, and read as **all eight bands at zero** four times
-over a minute after the phone's Bluetooth went off. So the table that the app
-drives, and that tracks every slider move, is not durable state on this side of the
-link — it belongs to the session the phone owns. The honest corollary: even if the
-write command is found, a curve set through it may not outlast the connection, which
-is a very different feature from the one this tool has been aiming at.
+**Corrected: the byte store is not volatile.** The paragraph that stood here claimed
+it was, on the strength of one observation — a curve read as the app's `−6 … +1` ramp
+while the phone was connected, and as eight zeros a minute after its Bluetooth went
+off. A power cycle settles what that observation could not. A curve dialed in the app
+(`−3, +2, −1, 0, 0, +2, +1, +1`) survived the headset switched off at the button,
+USB-C unplugged, the phone's and the laptop's radios off, no host of any kind able to
+reach it — and came back byte-identical.
 
-One alternative reading, not excluded: the revert is correlated with the
-disconnect, not proven caused by it. An app writing zeros as it lost the link would
-look identical from here.
+What fits every observation is **two tiers**: something is held non-volatile and
+restored at power-up, and a connected controller can also push a curve that lives
+only for the session, which is what the app does on connect. Reverting to the stored
+value when the link dropped is exactly what a second host would see. Which writes
+reach the non-volatile tier — a slider drag, a preset push, only an explicit save — is
+**not settled**, and the experiment that would have separated them was ruined by my
+own tidiness: the u16 store was zeroed before the power cycle, so a test that could
+have told flash from RAM came back with nothing to look for.
+
+The consequence for this tool is the good kind. If the user curve lives in flash, the
+write command worth finding is a feature rather than a footnote: a curve set from a
+PC would outlast the headset being switched off.
 
 `0x1012` writes persist, and the two paths disagree on byte order — `0x1013` echoes
 what was stored while `0x1093` reports the pair reversed, so a value of 1 written as
