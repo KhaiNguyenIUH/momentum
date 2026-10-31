@@ -71,6 +71,7 @@ answers.
 | `info` | Product name, firmware version with build stamp, serial number |
 | `eq` | The eight bands and their gain in decibels; `--raw` adds the tables we cannot yet explain |
 | `eq-set <band> <dB>` | Move one band, read it back, and mean it: the change is stored and audible |
+| `eq-tune` | Interactive tuner: frequency, Q, filter type and gain, one keystroke each, `r` puts it all back |
 | `anc <on\|off>` | Noise cancelling |
 | `transparency <0..=100>` | Transparent-hearing level; `0` turns it off |
 | `bass <on\|off>` | Bass boost |

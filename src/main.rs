@@ -113,8 +113,18 @@ enum Command {
     EqSet {
         /// Band index, as `momentum eq` prints it.
         band: u8,
-        /// Gain in decibels: `-3`, `2.5`, `0`. Stored in tenths.
+        /// Gain in decibels: `-3`, `2.5`, `0`. Stored in tenths. Negative values are
+        /// values, not options, so they are allowed to start with a minus sign.
+        #[arg(allow_hyphen_values = true)]
         gain: f32,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+    /// Type an edit, hear it, press `r` to put it all back. Reads the tables once and
+    /// writes each change on Enter, so the question "does this actually do anything?"
+    /// takes a keystroke instead of a rebuild.
+    EqTune {
         /// Select by service name or peer address; empty means any.
         #[arg(long, default_value = "")]
         filter: String,
@@ -348,6 +358,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Info { filter } => Some(info(filter)),
         Command::Eq { filter, raw } => Some(eq(filter, *raw)),
         Command::EqSet { band, gain, filter } => Some(eq_set(*band, *gain, filter)),
+        Command::EqTune { filter } => Some(eq_tune(filter)),
         Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
@@ -536,6 +547,189 @@ fn eq_set(band: u8, gain: f32, filter: &str) -> Result<(), Boxed> {
         None => println!("band {band}: the write was acked; the read-back carried no byte."),
     }
     println!("that is audible now, and the headset keeps the curve when it is switched off.");
+    Ok(())
+}
+
+/// One band, in the units the wire carries, which is the only honest way to hold it.
+#[cfg(windows)]
+#[derive(Clone, Copy, PartialEq)]
+struct Band {
+    hz: u16,
+    q: u16,
+    kind: u16,
+    tenths: i8,
+}
+
+/// Write every band of `want` and keep `now` in step with what the headset has.
+///
+/// A failure stops the pass rather than ploughing on: half a snapshot applied is worse
+/// than none, because the table on screen and the table in the headphone would then
+/// disagree in a way nobody can see.
+#[cfg(windows)]
+fn apply_bands(
+    session: &mut momentum::Session<momentum::rfcomm::WindowsRfcomm>,
+    want: &[Band],
+    now: &mut [Band],
+) -> Result<(), Boxed> {
+    for (index, band) in want.iter().enumerate() {
+        let band = *band;
+        let at = index as u8;
+        session.eq_set_u8(cmd::SET_EQ_GAIN, at, band.tenths as u8)?;
+        session.eq_set_u16(cmd::SET_EQ_FREQUENCY, at, band.hz)?;
+        session.eq_set_u16(cmd::SET_EQ_Q, at, band.q)?;
+        session.eq_set_u8(cmd::SET_EQ_FILTER_TYPE, at, band.kind as u8)?;
+        now[index] = band;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn print_bands(bands: &[Band]) {
+    println!("{:<5} {:>7}  {:>7}  {:>5}  {:>7}", "band", "Hz", "Q", "type", "dB");
+    for (index, band) in bands.iter().enumerate() {
+        println!(
+            "{:<5} {:>7}  {:>7.3}  {:>5}  {:>+7.1}",
+            index,
+            band.hz,
+            f64::from(band.q) / 4096.0,
+            band.kind,
+            f64::from(band.tenths) / 10.0,
+        );
+    }
+}
+
+/// Interactive equaliser tuner, made for listening rather than for scripting.
+///
+/// The tables are read once, each edit goes out on Enter, and `r` restores the snapshot
+/// taken at the start. That is the whole design: the frequency, Q and filter type of
+/// every band are writable, and whether the audio path consults them is settled by your
+/// ears in ten seconds, not by a frame log. Nothing here pretends to know whether a
+/// write was audible — the tool reports that the store accepted it, nothing more.
+#[cfg(windows)]
+fn eq_tune(filter: &str) -> Result<(), Boxed> {
+    use std::io::Write;
+
+    let mut session = open_session(filter)?;
+    let eq = session.equaliser()?;
+    let gains = eq.gains_db();
+    let at = |row: &[Option<u16>], index: usize| row.get(index).copied().flatten().unwrap_or(0);
+    let mut current: Vec<Band> = (0..eq.bands())
+        .map(|index| Band {
+            hz: at(&eq.row_100b, index),
+            q: at(&eq.band_values, index),
+            kind: at(&eq.limits, index),
+            tenths: (gains.get(index).copied().unwrap_or(0.0) * 10.0).round() as i8,
+        })
+        .collect();
+    let snapshot = current.clone();
+    print_bands(&current);
+    println!(
+        "b <band> <dB> · f <band> <Hz> · q <band> <Q> · t <band> <type> · \
+         f all <Hz> sets every band"
+    );
+    println!("g show · r restore the snapshot · x quit restoring · ! quit as it stands · ? help");
+
+    let stdin = std::io::stdin();
+    loop {
+        print!("eq> ");
+        let _ = std::io::stdout().flush();
+        let mut line = String::new();
+        if stdin.read_line(&mut line)? == 0 {
+            break;
+        }
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let Some(head) = words.first().copied() else {
+            continue;
+        };
+        match head {
+            "g" => print_bands(&current),
+            "?" => println!(
+                "b/f/q/t take a band index from the table above. dB is decibels, Hz hertz, \
+                 Q the decimal Q (0.71 is what the device ships), type the small integer. \
+                 `r` restores what you started with; `!` leaves it as it is."
+            ),
+            "!" => break,
+            "r" | "x" => {
+                apply_bands(&mut session, &snapshot, &mut current)?;
+                print_bands(&current);
+                println!("restored to what it was when this session opened.");
+                if head == "x" {
+                    break;
+                }
+            }
+            key @ ("b" | "f" | "q" | "t") => {
+                let mut words = words.iter().skip(1);
+                let (Some(where_which), Some(value)) = (words.next(), words.next()) else {
+                    println!("`{key}` wants a band and a value, like `{} 0 4000`", key);
+                    continue;
+                };
+                let spread = where_which.eq_ignore_ascii_case("all");
+                let index = if spread {
+                    0
+                } else {
+                    match where_which.parse::<usize>() {
+                        Ok(index) if index < current.len() => index,
+                        Ok(index) => {
+                            println!(
+                                "there is no band {index}: this equaliser has {} bands, 0..{}",
+                                current.len(),
+                                current.len() - 1
+                            );
+                            continue;
+                        }
+                        Err(_) => {
+                            println!("`{where_which}` is neither a band number nor `all`");
+                            continue;
+                        }
+                    }
+                };
+                let count = if spread { current.len() } else { 1 };
+                for offset in 0..count {
+                    let band = (index + offset) as u8;
+                    let outcome = match (key, value.parse::<f64>()) {
+                        ("b", Ok(db)) if db.abs() <= 12.7 => {
+                            let tenths = (db * 10.0).round() as i8;
+                            session
+                                .eq_set_u8(cmd::SET_EQ_GAIN, band, tenths as u8)
+                                .map(|()| Band { tenths, ..current[usize::from(band)] })
+                        }
+                        ("f", Ok(hz)) if (10.0..=24000.0).contains(&hz) => {
+                            let hz = hz.round() as u16;
+                            session
+                                .eq_set_u16(cmd::SET_EQ_FREQUENCY, band, hz)
+                                .map(|()| Band { hz, ..current[usize::from(band)] })
+                        }
+                        ("q", Ok(q)) if (0.05..=16.0).contains(&q) => {
+                            let raw = (q * 4096.0).round() as u16;
+                            session
+                                .eq_set_u16(cmd::SET_EQ_Q, band, raw)
+                                .map(|()| Band { q: raw, ..current[usize::from(band)] })
+                        }
+                        ("t", Ok(kind)) if (0.0..=255.0).contains(&kind) => {
+                            let kind = kind as u8;
+                            session
+                                .eq_set_u8(cmd::SET_EQ_FILTER_TYPE, band, kind)
+                                .map(|()| Band { kind: kind as u16, ..current[usize::from(band)] })
+                        }
+                        (_, Ok(_)) => {
+                            println!("out of range: dB within ±12.7 here, Hz 10..24000, Q 0.05..16, type 0..255");
+                            continue;
+                        }
+                        _ => {
+                            println!("`{value}` is not a number");
+                            continue;
+                        }
+                    };
+                    match outcome {
+                        Ok(updated) => current[usize::from(band)] = updated,
+                        Err(err) => println!("band {band}: {err}"),
+                    }
+                }
+                print_bands(&current);
+            }
+            other => println!("`{other}` is not a command; ? lists them"),
+        }
+    }
     Ok(())
 }
 

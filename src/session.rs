@@ -312,6 +312,28 @@ impl<L: Link> Session<L> {
         Ok(reply.payload.first().copied().map(|byte| byte as i8))
     }
 
+    /// Write one entry of a 16-bit equaliser table: `[band, value]` big-endian.
+    ///
+    /// Frequency in hertz and Q in Q12 both look like this. A refusal comes back as
+    /// [`Error::Refused`] with the headset's code in the message — these tables accept
+    /// an empty ack for values the app would never send, so a returned `Ok` means only
+    /// that the store took it, never that the audio path reads it.
+    pub fn eq_set_u16(&mut self, command: u16, band: u8, value: u16) -> Result<()> {
+        self.request(
+            command,
+            [band, (value >> 8) as u8, value as u8],
+            DEFAULT_TIMEOUT,
+        )?;
+        Ok(())
+    }
+
+    /// Write one entry of an 8-bit equaliser table: `[band, value]`. Gain is signed
+    /// tenths of a decibel; filter type is an opaque small integer.
+    pub fn eq_set_u8(&mut self, command: u16, band: u8, value: u8) -> Result<()> {
+        self.request(command, [band, value], DEFAULT_TIMEOUT)?;
+        Ok(())
+    }
+
     /// Query everything we display. Commands this firmware does not answer
     /// become warnings instead of failing the whole refresh, because the
     /// command set differs between MOMENTUM models.
