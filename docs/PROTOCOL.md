@@ -748,6 +748,40 @@ is one Windows has never implemented. `host` stays in the tree: it will log anyt
 that dials the service without asking first, and it documents precisely what a client
 needs before it will speak.
 
+## How a reply is numbered — corrected, and it changes what we thought we knew
+
+Measured over roughly a hundred commands, every answer obeys one rule:
+
+> **reply id = `(cmd & ~0x0080) + 0x0100`**, and `0x0080` is added to the low byte when
+> the command is **refused**.
+
+So `0x0080` is the device-to-host marker — stripped from inbound commands, set in
+outbound ones — and replies live one block up from their command. Three successes and
+several dozen refusals fit it exactly:
+
+| sent | answer | reading |
+| --- | --- | --- |
+| `0x0603` battery | `0x0703 [5a]` | `+0x100`, accepted, 90 % |
+| `0x1009` bass boost | `0x1109 [01]` | `+0x100`, accepted |
+| `0x100f` eq limit | `0x110f []` | `+0x100`, accepted, no payload |
+| `0x1080` | `0x1100 [08,c4,3c,00,00]` | the `0x80` was stripped, so this was really `0x1000` — accepted, with data |
+| `0x1002` | `0x1182 [05]` | `+0x100` **and** `+0x80`: refused, code `05` |
+
+Two consequences, both of which cost us time:
+
+- **`0x1000` is a command that answered with data** — `[08, c4, 3c, 00, 00]`. It had
+  always seemed unknown because it was only ever probed *with* a payload, which makes it
+  refuse.
+- **`01` and `05` are not the same refusal, and `01` is not about the payload.** The
+  equaliser ids answer `01` to eight bytes, nine and ten alike, so the length is not the
+  objection. `05` appears for ids that genuinely do not answer. What distinguishes the
+  ids that answer `01` is not yet known; the standing hypothesis is *state*, since every
+  equaliser attempt so far has been made while the headset sits on a preset, and
+  `0x1113 eq_state_reply` has always read `[00, 00]`.
+
+Sending a command with the *current* values is a no-op only if it is accepted, so the
+curve was read back after every attempt above; it never moved.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
