@@ -872,6 +872,33 @@ indicator), `0x0804` is the audio mode, and `0x1306` is the model, which reads
 `M5AEBT Denim` on this unit. And the user equaliser is only **heard** when the audio mode
 is `userEq`: a write that lands under another mode is stored, correct, and silent.
 
+### A parametric filter bank the app never mentions
+
+A graphic equaliser does not need firmware that reports, per band, a **frequency**, a **Q**
+and a **filter type** — `0x108b`, `0x108d`, `0x108f`. That is the description of a bank of
+biquads. So the obvious prediction was tested: setters sit one below getters and take the
+getter's own reply, which makes three candidates. Each was written with the value the
+device already publishes, so acceptance could change nothing:
+
+```
+0x100a [00, 00, 5a]  →  0x110a []      band 0 at 90 Hz
+0x100c [00, 08, 00]  →  0x110c []      band 0 at Q 0.5
+0x100e [00, 0e]      →  0x110e []      band 0 filter type 14
+```
+
+Three acks, no error bit, and the tables unchanged afterwards. **The filter bank is
+writable.** What is not yet known is whether the DSP reads it: an accepted write to a store
+the audio path ignores looks identical from this side, and the wide gain store at `0x1010`
+is already a known example of a table that acknowledges, persists and stays silent.
+
+Two observations keep the parametric reading alive rather than merely technical. The store
+at `0x1010` accepts gains to **±180** — ±18 dB in the same tenths the sliders use, three
+times the ±6 dB the interface allows — and Smart Control Plus's audio-mode list contains a
+**parametric** mode that this headset has never been observed to enter. Whether MOMENTUM 5
+carries a parametric equaliser that its own app declines to show, or carries the filter
+plumbing for a sibling product, is settled by moving one band somewhere audible, which is a
+deliberate change and so waits on a person who owns the headphones.
+
 ## Names borrowed from Sennheiser's own device model â€” and where to distrust them
 
 [xndbogdan/sennheiser-control](https://github.com/xndbogdan/sennheiser-control) extracted

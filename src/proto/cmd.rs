@@ -150,6 +150,18 @@ pub const GET_EQ_CONFIG: u16 = 0x1000;
 /// agreeing band for band. Note that the user equaliser is only *heard* in audio mode
 /// `userEq`; a write that lands while another mode is active is real but inaudible.
 pub const SET_EQ_GAIN: u16 = 0x1001;
+/// Write one band's **filter frequency**: `[band, u16 Hz big-endian]`, answered with
+/// an empty ack. The read side is [`GET_EQ_FREQUENCY`]. (live: `[00, 00, 5a]` → `0x110a []`)
+///
+/// The equaliser publishes a frequency, a Q and a filter type per band, and all three
+/// accept writes, which is a parametric filter bank — the Momentum 5's own app exposes
+/// only the gains. Whether the DSP reads what is written here has not yet been heard.
+pub const SET_EQ_FREQUENCY: u16 = 0x100A;
+/// Write one band's **Q factor**, `[band, u16 Q12]`. (live: `[00, 08, 00]` → `0x110c []`)
+pub const SET_EQ_Q: u16 = 0x100C;
+/// Write one band's **filter type**, `[band, u8]`; every band reads `14` here.
+/// (live: `[00, 0e]` → `0x110e []`)
+pub const SET_EQ_FILTER_TYPE: u16 = 0x100E;
 /// Read one band: `[band]` in, one signed byte out. (live: `0x1002 [00] → 0x1102 [3c]`)
 pub const GET_EQ_GAIN: u16 = 0x1002;
 /// Unresolved neighbour of the two above. Every payload tried — empty, one byte,
@@ -303,6 +315,12 @@ pub fn name(cmd: u16) -> &'static str {
         GET_EQ_GAIN => "get_eq_gain",
         0x1100 => "eq_config_reply",
         0x1101 => "eq_gain_set_ack",
+        SET_EQ_FREQUENCY => "set_eq_frequency",
+        SET_EQ_Q => "set_eq_q",
+        SET_EQ_FILTER_TYPE => "set_eq_filter_type",
+        0x110a => "eq_frequency_ack",
+        0x110c => "eq_q_ack",
+        0x110e => "eq_filter_type_ack",
         // The codec actually in use, and the audio mode that decides whether the user
         // equaliser is audible at all. Both read via their `+0x100` reply.
         0x0900 => "codec_reply",
