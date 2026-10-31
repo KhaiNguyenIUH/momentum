@@ -263,6 +263,10 @@ pub fn name(cmd: u16) -> &'static str {
         0x1110 => "eq_gain_wide_ack",
         0x1111 => "eq_gain_wide_reply",
         0x1113 => "eq_state_reply",
+        // Measured on a Momentum 5, firmware 6.21.1, by scripted physical steps:
+        // `[02]` every time they came off the head, `[03]` every time they went back
+        // on, and nothing at all from the app. Whether that is wear or simply the
+        // unit being in use is not settled — see docs/PROTOCOL.md.
         0x0482 => "unit_state_push",
         0x0880 => "stability_push",
         0x1A81 => "mode_list_push",

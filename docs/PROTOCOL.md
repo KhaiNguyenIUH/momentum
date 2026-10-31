@@ -638,6 +638,43 @@ FF 04 00 00 | 04 95 01 07                     its ack
 - No frame this device sends or accepts has ever contained a checksum, and the parser
   resynchronises on `FF` without one.
 
+## Wear state, identified by experiment
+
+`steps --script wear` walks a human through seven states, one Enter each, so no frame
+is attributed to a guess. With features `02 04 0b 10 1b` registered on firmware
+6.21.1, six transitions produced exactly one moving frame, `0x0482`:
+
+| what was done | `0x0482` |
+| --- | --- |
+| off the head, held in the hands | `[02]` |
+| back on the head | `[03]` |
+| the app, wear detection already enabled | nothing at all |
+| off the head again | `[02]` |
+| on again | `[03]` |
+| off, then the power button | `[02]`, then the channel closed |
+
+Six for six, both directions, with nothing else on five subscribed features moving —
+including all nine frames of feature `0x04`, which reported once and then never again
+whether the headphones were worn or not. So `stability_push` is not a wear sensor, and
+the wear-detection switch in the app is not announced on these features at all.
+
+Two things the transcript shows that a summary would smooth over:
+
+- **Removal pushes the frame twice within the same poll**, in both runs; putting them
+  on pushes it once. Whether that is two sensors or one sensor settling is not
+  something this experiment can decide.
+- The baseline step opened with `[02]` and moved to `[03]` fourteen seconds in, before
+  any instruction — the headphones were being put on while the tool was still
+  connecting.
+
+**What is still not ruled out:** that `0x0482` reports whether the unit is *active*
+rather than *worn*. Every step in that script changed wearing and nothing else, so
+playback was never tested, and a frame that moves when audio starts would look
+identical here. The `buttons` script exists precisely to separate those: it plays and
+pauses without anyone taking anything off. A second tell is that `0x2C83`, which this
+tool has long called `wear_push` on the strength of the published naming scheme, never
+appeared — its feature is `0x2C`, outside the `01`–`1f` range ever swept.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
