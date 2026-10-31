@@ -98,7 +98,11 @@ pub const GET_CHARGING: u16 = 0x0602;
 /// (live on MOMENTUM 5: `0x0603 [] -> 0x0703 [64]` = 100 %)
 pub const GET_BATTERY: u16 = 0x0603;
 
-/// Set active noise control on/off. Payload `01`/`00`. (live on MOMENTUM 5)
+/// The noise-control master switch: `ANC_Status` in Sennheiser's model, `01`/`00`.
+/// Separate from the `(mode, state)` pairs at `0x1A00`, where mode 1 is anti-wind, 2
+/// comfort and 3 adaptive — a distinction that explains why ANC and transparency looked
+/// mutually exclusive to a tool that only ever touched one of the two switches.
+/// (live on MOMENTUM 5: writing this changed what the headset did)
 pub const SET_ANC: u16 = 0x1A04;
 /// Query active noise control state. (live: `0x1A05 [] -> 0x1B05 [01]`)
 pub const GET_ANC: u16 = 0x1A05;
@@ -114,7 +118,12 @@ pub const SET_TRANSPARENCY_LEVEL: u16 = 0x1A02;
 /// Query the ambient/transparent-hearing level. (live on MOMENTUM 5)
 pub const GET_TRANSPARENCY_LEVEL: u16 = 0x1A03;
 
-/// Set bass boost on/off. (live on MOMENTUM 5)
+/// The sub-mode word, or bass boost — the naming is not settled and this tool has
+/// hedged it the wrong way round. Sennheiser's own device model calls `0x1008` / `0x09`
+/// `User_EQ_SetSubMode` / `GetSubMode`, a **bitmask** notified as `0x1089`. We write `01`
+/// and read `01` back, and that bit has always agreed with what the app calls bass boost,
+/// but no test has yet toggled the app's bass boost and watched which bit moves.
+/// (live on MOMENTUM 5, name uncertain)
 pub const SET_BASS_BOOST: u16 = 0x1008;
 /// Query bass boost. (live on MOMENTUM 5)
 pub const GET_BASS_BOOST: u16 = 0x1009;
