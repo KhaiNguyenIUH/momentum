@@ -710,6 +710,14 @@ renegotiation, `08` while the phone streamed 48 kHz — and that its values are 
 understood. Codec, quality setting, or link state; the bytes do not say, and this
 document has been wrong before by picking an answer.
 
+What it means now, from Sennheiser's own enumeration: `02` is aptX, `08` aptX Adaptive,
+`ff` no codec. And `0x089a` is the rate of the **stream**, which is narrower than what
+this section claimed when it was written. The same track played from the PC at 24-bit
+44.1, 88.2 and 96 kHz left both frames unmoved at `02` / `44100` every time. The number
+is set by codec negotiation, not by the file, and whether the resampling happens in
+Windows or in the headphone is not visible on this channel — a distinction the tool
+used to erase by printing "the headset is decoding 44100 Hz".
+
 **Ruled out by the same run:** none of it is volume. The Windows slider for the
 headphones moved from 20 % to 40 % and back with the headphones as the default output,
 and the phone's own volume moved as well, with **no frame at all** in reply. `0x0896`,

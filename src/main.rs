@@ -910,8 +910,9 @@ fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
     match rate {
         Some(0) => println!("the headset reports no stream: the link is idle."),
         Some(hz) => println!(
-            "the headset is decoding {hz} Hz. a file above that rate was resampled or \
-             refused by the codec, not by Windows."
+            "the stream is {hz} Hz. that is the negotiated link rate, not the file's: \
+             24-bit sources at 44.1, 88.2 and 96 kHz all read 44100 over aptX, so what \
+             Windows does to the samples before encoding is not visible from here."
         ),
         None => println!("no sample-rate frame in {seconds}s of listening."),
     }
