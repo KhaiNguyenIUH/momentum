@@ -243,8 +243,9 @@ enum Command {
         /// Vendor id as hex, e.g. 495. Only with a specific --cmd.
         #[arg(long)]
         vendor: Option<String>,
-        /// Command id as hex, e.g. 1A05. Sends that one frame instead of the
-        /// standard matrix.
+        /// Command id as hex, e.g. 1A05, or a span like 1000-101f, which sends the
+        /// same payload to every id in it. That one frame instead of the standard
+        /// matrix.
         #[arg(long)]
         cmd: Option<String>,
         /// Payload bytes as hex pairs, space or comma separated. Only with --cmd.
@@ -981,11 +982,11 @@ fn probe(
             probes.push(command(VENDOR_QUALCOMM, momentum::cmd::REGISTER_FEATURE, vec![id]));
         }
     } else if let Some(text) = cmd {
-        probes.push(command(
-            parse_u16(vendor.unwrap_or("495"))?,
-            parse_u16(text)?,
-            hex_bytes(payload)?,
-        ));
+        let vendor = parse_u16(vendor.unwrap_or("495"))?;
+        let bytes = hex_bytes(payload)?;
+        for id in parse_u16_spec(text)? {
+            probes.push(command(vendor, id, bytes.clone()));
+        }
     } else {
         let queries = [
             (momentum::cmd::REGISTER_FEATURE, vec![feature::BATTERY]),
@@ -1056,6 +1057,30 @@ fn command(vendor: u16, cmd: u16, payload: Vec<u8>) -> momentum::Frame {
 fn parse_u16(text: &str) -> Result<u16, Boxed> {
     u16::from_str_radix(text.trim().trim_start_matches("0x"), 16)
         .map_err(|e| format!("\"{text}\" is not a hex number: {e}").into())
+}
+
+/// Command ids as hex: one `1005`, a span `1000-101f`, or a comma list. The span is
+/// what makes a refusal pattern visible — one id tells you about a command, a block
+/// of them tells you whether the firmware is refusing the *id* or the *payload*, and
+/// those two have been telling very different stories all week.
+#[cfg(windows)]
+fn parse_u16_spec(text: &str) -> Result<Vec<u16>, Boxed> {
+    let mut out = Vec::new();
+    for part in text.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+        if let Some((lo, hi)) = part.split_once('-') {
+            let (lo, hi) = (parse_u16(lo)?, parse_u16(hi)?);
+            if lo > hi {
+                return Err(format!("{lo:04x}-{hi:04x} runs backwards").into());
+            }
+            out.extend(lo..=hi);
+        } else {
+            out.push(parse_u16(part)?);
+        }
+    }
+    if out.is_empty() {
+        return Err("no command ids given".into());
+    }
+    Ok(out)
 }
 
 /// Parse "01 f2" or "01,f2" into bytes; empty text means no payload.
