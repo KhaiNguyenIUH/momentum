@@ -59,6 +59,17 @@ pub fn error_name(code: u8) -> &'static str {
         0x04 => "not ready",
         0x05 => "not supported",             // live: 0x0007 under vendor 0x001D
         0x06 => "not initialised",
+        0x07 => "internal error",
+        0x08 => "hardware failure",
+        // The 0x80 class is the device saying something is a valid operation in a state
+        // where it cannot happen, rather than a command it has never heard of. Both of
+        // these were seen from a MOMENTUM 5, and they read as information rather than as
+        // failure: `0x82` was the u16 gain store rejecting 182 of a range ending at 180,
+        // and `0x80` was the audio mode being set to the mode it was already in.
+        0x80 => "already",                   // live: 0x0803 with the mode already active
+        0x81 => "unknown",
+        0x82 => "out of range",              // live: 0x1010 with a gain of −182
+        0x83 => "delete entry failed",
         _ => "unknown error",
     }
 }

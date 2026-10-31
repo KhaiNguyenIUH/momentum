@@ -890,32 +890,61 @@ indicator), `0x0804` is the audio mode, and `0x1306` is the model, which reads
 `M5AEBT Denim` on this unit. And the user equaliser is only **heard** when the audio mode
 is `userEq`: a write that lands under another mode is stored, correct, and silent.
 
-### A parametric filter bank the app never mentions
+### The filter bank is the graphic equaliser, not a hidden one
 
-A graphic equaliser does not need firmware that reports, per band, a **frequency**, a **Q**
-and a **filter type** — `0x108b`, `0x108d`, `0x108f`. That is the description of a bank of
-biquads. So the obvious prediction was tested: setters sit one below getters and take the
-getter's own reply, which makes three candidates. Each was written with the value the
-device already publishes, so acceptance could change nothing:
+Firmware that reports a **frequency**, a **Q** and a **filter type** per band (`0x108b`,
+`0x108d`, `0x108f`) invites the theory that a parametric equaliser is hiding behind the
+sliders. The setters predicted from this block's idiom were tested, and all three exist —
+each written with the value the device already published, so acceptance could change
+nothing:
 
 ```
-0x100a [00, 00, 5a]  ?  0x110a []      band 0 at 90 Hz
-0x100c [00, 08, 00]  ?  0x110c []      band 0 at Q 0.5
-0x100e [00, 0e]      ?  0x110e []      band 0 filter type 14
+0x100a [00, 00, 5a]  →  0x110a []      band 0 at 90 Hz
+0x100c [00, 08, 00]  →  0x110c []      band 0 at Q 0.5
+0x100e [00, 0e]      →  0x110e []      band 0 filter type 14
 ```
 
-Three acks, no error bit, and the tables unchanged afterwards. **The filter bank is
-writable.** What is not yet known is whether the DSP reads it: an accepted write to a store
-the audio path ignores looks identical from this side, and the wide gain store at `0x1010`
-is already a known example of a table that acknowledges, persists and stays silent.
+Three acks, no error bit, and the tables unchanged afterwards. But the theory they seemed
+to support is wrong, and the same external source that supplied the gain write refutes it.
+Sennheiser's Gen1 equaliser computed its curve **in the app** and pushed the result as
+explicit filters: a master gain plus four cascaded shelves, each sent as type `11`,
+frequency × 3 in 1/3 Hz, gain × 60 in 1/60 dB, and **Q × 4096** — the same Q12 as the
+`0x0b5c` this unit reports. And the MOMENTUM 4, whose equaliser screen is five sliders,
+pushes the same three tables in the same shape: 90, 325, 1500, 6500, 6500 Hz, Q 0.5 then
+0.71, type 14 — five bands for five sliders, where the MOMENTUM 5 reports eight for eight.
 
-Two observations keep the parametric reading alive rather than merely technical. The store
-at `0x1010` accepts gains to **±180** — ±18 dB in the same tenths the sliders use, three
-times the ±6 dB the interface allows — and Smart Control Plus's audio-mode list contains a
-**parametric** mode that this headset has never been observed to enter. Whether MOMENTUM 5
-carries a parametric equaliser that its own app declines to show, or carries the filter
-plumbing for a sibling product, is settled by moving one band somewhere audible, which is a
-deliberate change and so waits on a person who owns the headphones.
+So these are not a concealed parametric equaliser. A slider *is* a biquad, the device
+publishes its biquads, and that they are writable says about that much. What stays genuinely
+open is narrower: whether the audio path reads what is written into them or recomputes the
+filters from its own table at load. `0x1010` is the precedent for the pessimistic answer — a
+table that acknowledges, persists and stays silent — and only listening distinguishes them:
+raise one band, move its centre frequency, hear whether the peak moves. `momentum eq gain`
+followed by `momentum eq freq` does exactly that.
+
+The wide gain store is still unexplained, and one more unit deserves taking seriously.
+`0x1010` accepts gains to **±180** and refuses 182. Read in the tenths the sliders use that
+is ±18 dB, three times what the interface permits; read in the **1/60 dB** of the app's own
+Gen1 encoder it is ±3 dB — a level-shift scale rather than an equaliser scale, which would
+suit a store the equaliser screen has no reason to touch. Nothing on this side distinguishes
+the two readings, and inventing a third would be worse than leaving it open.
+
+### Audio mode 4 is a state this firmware will sit in
+
+```
+0x0804           →  0x0904 [00, 04]   found in mode 4, having read [00, 01] an hour earlier
+0x0803 [00, 04]  →  0x0983 [80]       ALREADY
+0x0803 [00, 01]  →  0x0903 []         accepted
+0x0804           →  0x0904 [00, 01]
+```
+
+The mode numbers are Smart Control Plus's `Lgb` enum, one enumeration shared across the
+product family, so this unit answering mode 4 is not evidence that mode 4 means *parametric*
+here; the same source's M4 feature list reads *Equalizer v2 — graphic EQ, no parametric*, and
+no parametric parameter store turned up in `0x1015`–`0x101f` or in registrations up to
+feature `0x2f`. What the frames do establish is that mode 4 is not refused: the device was
+in it, said ALREADY when asked again, and moved back on request. Why it was in mode 4 at all,
+nobody having sent the command here, is unresolved — including the mundane possibility that
+it was sent from somewhere and promptly forgotten.
 
 All three parameters are on the command line now, as `momentum eq freq`, `eq q` and
 `eq type`. Each re-reads the bank before printing it: the session drops its cached tables
@@ -994,7 +1023,7 @@ MOMENTUM 5, firmware 6.21.1, and three of them explain things this document had 
 | `0x0406` | `[00]` | Bluetooth compatibility mode 0 = *better audio*, i.e. **Hi-Res on** |
 | `0x0601 [00]` | `[00, 03, 84]` | **auto power-off timer 0 = 900 s** |
 | `0x0601 [01]` | `0x0781 [05]` | timer 1, limbo: refused with code `5` — the same refusal their M4 gives |
-| `0x0802` | `[02]` | voice prompts: 0 off, 1 tones, 2 voice + tones ? **voice and tones** |
+| `0x0802` | `[02]` | voice prompts: 0 off, 1 tones, 2 voice + tones → **voice and tones** |
 | `0x0806` | `[00]` | call sidetone 0 |
 | `0x0818` | `[00]` | low-latency mode off, the getter of the `0x0898` push we already received |
 | `0x081A` | `[00,00,00,00]` | **their inferred sample-rate getter is real** — not in Sennheiser's model, derived from the `0x089a` push, and it answers |
@@ -1017,8 +1046,8 @@ once, and `0x1407` says this PC is entry **0**. Reading the entries gives the na
 ASCII:
 
 ```
-0x1401 [00] ? 00, 00, 01, "DESKTOP-RJJ7468"     index 0, priority 0, status 1
-0x1401 [01] ? 01, 01, 00, "Mi 11"               index 1, priority 1, status 0
+0x1401 [00] → 00, 00, 01, "DESKTOP-RJJ7468"     index 0, priority 0, status 1
+0x1401 [01] → 01, 01, 00, "Mi 11"               index 1, priority 1, status 0
 ```
 
 Status `1` for the machine that is connected and `0` for the phone that is not, so the byte
