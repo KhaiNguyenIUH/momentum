@@ -108,6 +108,9 @@ enum Command {
     /// writable u16 store (`0x1010`), then read it back from the device and report
     /// whether it stuck. This is the store this host can write, and the one no ear
     /// has ever confirmed — switch between `ramp1` and `ramp2` with music playing.
+    ///
+    /// The write is **persisted**: the values survive the headset being switched
+    /// off. `ramp0` puts it back to zeros.
     Ramp1 {
         /// Select by service name or peer address; empty means any.
         #[arg(long, default_value = "")]

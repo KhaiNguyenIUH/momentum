@@ -519,6 +519,15 @@ the likeliest reading is a factory or service table, or a reserved one. It stays
 documented rather than deleted precisely because it looks like an equaliser and is
 one, which is a trap worth labelling.
 
+**Non-volatile as well.** With the headset switched off at the button — phone and
+laptop radios off, USB-C unplugged, both RFCOMM channels verified unreachable, no
+process on the PC holding a link — the table came back byte-identical, exactly as the
+user curve beside it did. So **both writable stores live in flash**, which turns
+`momentum ramp1` and `ramp2` from probes into edits of persisted state, and makes this
+table stranger rather than duller: a per-band store with a limit field and a range
+check, kept faithfully across power cuts, that nothing so far can be found to switch
+on.
+
 The remaining way to change this headset's sound from a PC is the write command for
 the **byte** store, and it is not in the range tried: `0x1002`, `0x100a`, `0x100c`
 and `0x100e` all answer `05` with the phone connected or not.
