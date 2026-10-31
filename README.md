@@ -18,11 +18,11 @@ change how the headset behaves:
 ```console
 $ momentum status
 noise control: noise cancelling | ambient level 0 | battery 100% | bass boost off
-device: MOMENTUM 5 | firmware 6.21.1 (built 2026-05-20 06:46:42+00:00) | serial 8000800326034155
+device: MOMENTUM 5 | firmware 6.21.5 (built 2026-07-13 11:32:33+00:00) | serial 8000800326034155
 
 $ momentum info
 product: MOMENTUM 5
-firmware: 6.21.1 / 2026-05-20 06:46:42+00:00
+firmware: 6.21.5 / 2026-07-13 11:32:33+00:00
 serial: 8000800326034155
 
 $ momentum anc off

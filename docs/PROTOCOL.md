@@ -8,7 +8,7 @@ claim. Nothing here is invented: an id that nobody has observed is labelled
 
 | Level | Meaning |
 | --- | --- |
-| **live** | Observed on a MOMENTUM 5, BD_ADDR `80:C3:BA:C5:BB:97`, driven by this program, with the headset's behaviour seen to change. |
+| **live** | Observed on a MOMENTUM 5, BD_ADDR `80:C3:BA:C5:BB:97`, driven by this program, with the headset's behaviour seen to change. Everything below the update section was taken on firmware `6.21.1`; what moved in `6.21.5` is measured and tabled under *6.21.1 to 6.21.5*. |
 | **confirmed** | In btsnoop captures of the official Smart Control app driving a MOMENTUM True Wireless 4, and byte-identical in an independent MOMENTUM 4 tool. |
 | **probable** | Documented for one MOMENTUM model; same Qualcomm GAIA family, not yet seen here. |
 | **probe** | Plausible id from the Qualcomm GAIA basic command set. Sent only on request; answer printed raw. |
@@ -958,6 +958,46 @@ suit a store the equaliser screen has no reason to touch. Nothing on this side d
 the two readings, and inventing a third would be worse than leaving it open. What is no
 longer open is whether anything reads it: a tilt of −6 … +6 dB written there was confirmed
 by re-reading the device in mode 1 and again in mode 4, and produced no sound in either.
+
+### 6.21.1 to 6.21.5: the update, and what actually moved
+
+Updated on the same unit, serial `8000800326034155`, without a factory reset. The claim
+level of everything in this document is the old firmware, so the whole measurement surface
+was walked again on the new one, one command per connection as the rule at the top demands.
+
+| | 6.21.1 | 6.21.5 |
+| --- | --- | --- |
+| firmware | `6.21.1` | `6.21.5`, dated 2026-07-13 |
+| `0x0601` auto power-off | `[00, 03, 84]` — 900 s | `[00, 0e, 10]` — **3600 s** |
+| `0x1009` bass boost | `[00]`, set off by hand that evening | **`[01]` on** |
+| the user curve | `-3.0, +1.0, -1.0, 0, 0, +2.0, +1.0, +1.0` | kept, hand edits and all |
+| audio mode | `usereq` | `usereq` |
+| wear detection, smart pause | on, on | on, on |
+| `0x1100` equaliser config | `[08, c4, 3c, 00, 00]` | identical — eight bands, ±6.0 dB |
+| `0x1114` | `[00, 3c]` | identical — still zero bands |
+| Gen1 `0x1003` parameter query | `0x1183 [05]`, not supported | `0x1183 [05]`, not supported |
+| `0x1015` | `0x1195 [01]`, twice | twice, the same |
+| the wide store, `0x1091` | all zeros | all zeros |
+| the frequency push, `0x108b` | 90 … 16000 Hz | identical bytes |
+
+So the update moved two user settings, one of them the auto power-off, which went from
+fifteen minutes to an hour without being asked — the reason every session this evening ended
+with a silent radio has been fixed by Sennheiser, by accident, in the wrong direction for a
+bug report and the right one for measurement. The command surface is byte-identical on
+every id that carries a conclusion in this document, including the three that establish the
+absence of a parametric equaliser. What the update has *not* had is an ear in front of it:
+the finding that centre frequency, Q and filter type are stored and not heard belongs to
+6.21.1, and the one-line re-test on the new firmware is
+
+```
+momentum eq set 0 --gain 6 --freq 4000 --hold 12
+```
+
+Against this firmware, one transport artefact appeared and is worth recording: channel 0
+began refusing with `0x8007277C` on the first attempt of a run while channel 1 answered,
+where before both channels opened. The tool tries 0 then 1 and so does not notice, but a
+client that binds one channel and does not retry will now fail intermittently until the
+device is re-paired.
 
 ### There is no parametric equaliser on this unit
 
