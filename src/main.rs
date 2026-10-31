@@ -350,16 +350,16 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             channel,
             features,
             register,
-        } => Some(probe(
-            *seconds,
+        } => Some(probe(&ProbeRequest {
+            seconds: *seconds,
             filter,
-            vendor.as_deref(),
-            cmd.as_deref(),
+            vendor: vendor.as_deref(),
+            cmd: cmd.as_deref(),
             payload,
-            *channel,
-            features.as_deref(),
-            register.as_deref(),
-        )),
+            channel: *channel,
+            features: features.as_deref(),
+            register: register.as_deref(),
+        })),
         _ => None,
     }
 }
@@ -970,19 +970,36 @@ fn host(serve: bool, name: &str) -> Result<(), Boxed> {
 /// this headset's company id as 0x001D while the protocol itself is Qualcomm's
 /// 0x0495, so the same queries are tried under both before any conclusion is
 /// drawn.
+/// Everything one `probe` run may be asked to do. It arrived as eight positional
+/// arguments, which is how a tool ends up sending the wrong payload to the wrong id;
+/// the caller now has to name what it means.
 #[cfg(windows)]
-fn probe(
+#[derive(Clone, Copy)]
+struct ProbeRequest<'a> {
     seconds: u64,
-    filter: &str,
-    vendor: Option<&str>,
-    cmd: Option<&str>,
-    payload: &str,
+    filter: &'a str,
+    vendor: Option<&'a str>,
+    cmd: Option<&'a str>,
+    payload: &'a str,
     channel: Option<u32>,
-    features: Option<&str>,
-    register: Option<&str>,
-) -> Result<(), Boxed> {
+    features: Option<&'a str>,
+    register: Option<&'a str>,
+}
+
+#[cfg(windows)]
+fn probe(request: &ProbeRequest<'_>) -> Result<(), Boxed> {
     use momentum::cmd::feature;
     use momentum::proto::frame::VENDOR_QUALCOMM;
+    let ProbeRequest {
+        seconds,
+        filter,
+        vendor,
+        cmd,
+        payload,
+        channel,
+        features,
+        register,
+    } = *request;
 
     let mut link = connect_first(filter, false, channel)?.into_link();
 
