@@ -716,6 +716,38 @@ produced the burst above. Either Windows' stream did not start when expected, or
 PC's link was already the 44100 that was being reported anyway, and this run cannot
 tell those apart.
 
+## A PC posing as a headset: how far it gets
+
+The equaliser write comes from the app, and nothing on this side of the air can see it.
+So reverse the direction: Smart Control dials a headset by service UUID, therefore a PC
+holding that UUID is a headset as far as the app knows. `momentum host` tests that in
+two stages, and the answer is a yes and a no, both worth recording.
+
+How far it gets — each of these was observed, not inferred:
+
+- Windows **grants the SDP record** for an arbitrary UUID. `CreateAsync` returns a
+  provider, and the record arrives **empty**, so the service name is ours to write.
+- The adapter **supports the peripheral role**; the tool now prints that rather than
+  leaving it to be guessed at.
+- The service **binds and advertises** with the radio discoverable, and waits.
+- The phone **pairs** with a device offering no profiles at all, and Windows brings up
+  PAN with it. The phone lists it by computer name, not by the service name.
+- **Smart Control lists the PC as a device**, alongside the real MOMENTUM 5.
+
+Where it stops: selecting it shows *Connect via BT* with an *Open Settings* button. The
+app wants a Bluetooth **profile** connection before it dials the control service, and
+Windows has no A2DP sink — a phone can never be connected to a PC for media audio,
+however the phone's own toggles are set. MIUI's *Call audio* and *Media audio* switches
+are preferences, not states, and the app is reading the state. The socket is never
+opened, so not one frame arrives.
+
+So the route to the app's own frames is closed here, by a profile gate rather than by
+the protocol or by anything in Windows' SDP layer — which is the part worth knowing,
+because it says the emulator is one profile away from working, and the missing profile
+is one Windows has never implemented. `host` stays in the tree: it will log anything
+that dials the service without asking first, and it documents precisely what a client
+needs before it will speak.
+
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
