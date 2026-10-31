@@ -263,6 +263,13 @@ enum Command {
         /// this way is safe and firing unrecognised ids with empty payloads is not.
         #[arg(long)]
         features: Option<String>,
+        /// Declare these features — the same byte spec as `--features` — and wait for
+        /// their tables, *then* send the commands. A device is entitled to answer a
+        /// command only once the client has declared the feature it belongs to, so a
+        /// refusal on a link that declared nothing is not yet evidence about the
+        /// command.
+        #[arg(long)]
+        register: Option<String>,
     },
 }
 
@@ -342,6 +349,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             payload,
             channel,
             features,
+            register,
         } => Some(probe(
             *seconds,
             filter,
@@ -350,6 +358,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             payload,
             *channel,
             features.as_deref(),
+            register.as_deref(),
         )),
         _ => None,
     }
@@ -970,11 +979,36 @@ fn probe(
     payload: &str,
     channel: Option<u32>,
     features: Option<&str>,
+    register: Option<&str>,
 ) -> Result<(), Boxed> {
     use momentum::cmd::feature;
     use momentum::proto::frame::VENDOR_QUALCOMM;
 
     let mut link = connect_first(filter, false, channel)?.into_link();
+
+    // Declaring a feature first, because "the device refused" and "the device refused
+    // a client that never announced itself" are different findings, and only the
+    // second one would be our mistake.
+    if let Some(spec) = register {
+        for id in byte_spec(spec)? {
+            println!(">> declaring feature {id:02x} before the probes");
+            momentum::Link::write_frame(
+                &mut link,
+                &command(VENDOR_QUALCOMM, momentum::cmd::REGISTER_FEATURE, vec![id]),
+            )?;
+        }
+        let settle = Instant::now() + Duration::from_millis(700);
+        while Instant::now() < settle {
+            if let Some(frame) = momentum::Link::read_frame(&mut link, Duration::from_millis(100))? {
+                println!(
+                    "   its tables: 0x{:04x} {:<22} {:02x?}",
+                    frame.cmd,
+                    momentum::cmd::name(frame.cmd),
+                    frame.payload,
+                );
+            }
+        }
+    }
 
     let mut probes: Vec<momentum::Frame> = Vec::new();
     if let Some(spec) = features {
