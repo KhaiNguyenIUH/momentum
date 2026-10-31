@@ -192,10 +192,24 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
+    /// Print every state push the headset sends, for as long as you keep the channel open.
+    ///
+    /// Pushes arrive when the device decides to speak: mode changes, battery, the codec
+    /// renegotiating, the wear sensor changing its mind. The equaliser tables are **not**
+    /// pushed when another client writes them, which matters because something does — your
+    /// curve was found rewritten one evening with nobody's hands on it. `--changes` polls
+    /// those tables and prints only what moved, and when.
     Watch {
-        /// Seconds to keep the channel open.
+        /// Seconds to keep going. `0` runs until you interrupt it.
         #[arg(long, default_value_t = 30)]
         seconds: u64,
+        /// Poll the equaliser tables instead of waiting for pushes, printing only changes.
+        #[arg(long)]
+        changes: bool,
+        /// With `--changes`, seconds between polls. Not smaller: this stack reconnects for
+        /// every poll, and the headset answers exactly one control connection at a time.
+        #[arg(long, default_value_t = 5)]
+        every: u64,
         /// Select by service name or peer address; empty means any.
         #[arg(long, default_value = "")]
         filter: String,
@@ -493,9 +507,15 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Host { serve, name } => Some(host(*serve, name)),
         Command::Watch {
             seconds,
+            changes,
+            every,
             filter,
             raw,
-        } => Some(watch(*seconds, filter, *raw)),
+        } => Some(if *changes {
+            eq_watch(*seconds, *every, filter)
+        } else {
+            watch(*seconds, filter, *raw)
+        }),
         Command::Audio { seconds, filter } => Some(audio(*seconds, filter)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
@@ -1237,11 +1257,118 @@ fn print_bank(eq: &momentum::proto::state::Equaliser) {
         );
     }
     println!(
-        "dB is calibrated: ten raw units per decibel, read back exactly for a ramp of \
-         -6, -5, -4, -3, -2, -1, 0, +1 set in the app. Q is Q12 over 4096, so 0.707 is \
-         1/√2. Nothing here claims the audio path reads the frequency, Q or type: all \
-         three are writable and answer an ack, which is all that is known."
+        "dB is calibrated: ten raw units per decibel, and the one column the ear confirms. \
+         Frequency, Q and type are stored, acknowledged and read back exactly as written, \
+         and were measured not to change what you hear — on firmware 6.21.1 and again on \
+         6.21.5. Q is Q12 over 4096, so 0.707 is 1/√2."
     );
+}
+
+/// What moved between two readings of the equaliser, one line per parameter that differs.
+///
+/// This exists because the device does not push these tables when a client writes them, and
+/// something on this account does write them: a curve found at one time of evening was not
+/// the curve found ninety minutes later, with nobody's hands on it. So the useful question
+/// is not what the values are but what changed and when — and *when* belongs to the
+/// caller, who owns the clock.
+fn eq_diff(
+    before: &momentum::proto::state::Equaliser,
+    after: &momentum::proto::state::Equaliser,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for band in 0..before.bands().min(after.bands()) {
+        let gain = |e: &momentum::proto::state::Equaliser| e.gains.get(band).copied();
+        if let Some((was, now)) = gain(before)
+            .zip(gain(after))
+            .filter(|(was, now)| was != now)
+        {
+            out.push(format!(
+                "band {band}: gain {:+.1} → {:+.1} dB",
+                f32::from(was) / 10.0,
+                f32::from(now) / 10.0
+            ));
+        }
+        for (label, was_row, now_row) in [
+            ("Hz", &before.hz, &after.hz),
+            ("Q12", &before.q12, &after.q12),
+            ("type", &before.filter_types, &after.filter_types),
+            ("wide", &before.gains_wide, &after.gains_wide),
+        ] {
+            let was = was_row.get(band).copied().flatten();
+            let now = now_row.get(band).copied().flatten();
+            if was != now {
+                out.push(format!("band {band}: {label} {was:?} → {now:?}"));
+            }
+        }
+    }
+    out
+}
+
+/// Poll the equaliser tables and print only what moved, with the moment it moved.
+///
+/// Polling is the whole method here. The device pushes these tables when it changes them
+/// itself and stays silent when another client writes them, so an app rewriting your curve
+/// mid-session is invisible unless you keep asking — which is exactly the case this is for.
+///
+/// Each poll opens its own connection and closes it again, and that is not laziness: this
+/// unit's server accepts **one** control connection at a time, refusing a second on either
+/// channel with `0x80070490`. A watcher that held the line would occupy the only slot and
+/// so would prevent, rather than observe, the write it was waiting for. The gaps between
+/// polls are where somebody else gets their turn — and therefore the only place a change
+/// can come from. Collisions are part of that: a poll that finds the slot busy says so once
+/// and tries again, because the thing occupying it is precisely what is being watched for.
+#[cfg(windows)]
+fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
+    let every = every.max(2);
+    let start = Instant::now();
+    let mut seen: Option<momentum::proto::state::Equaliser> = None;
+    let mut misses = 0u32;
+    println!("polling the equaliser every {every}s, connecting fresh each time. Ctrl-C to stop.");
+    loop {
+        let mut session = match open_session(filter) {
+            Ok(session) => {
+                misses = 0;
+                session
+            }
+            Err(err) => {
+                misses += 1;
+                if misses == 1 || misses.is_multiple_of(10) {
+                    println!(
+                        "t+{:6.1}s  no channel this time ({err}); somebody else is holding it",
+                        start.elapsed().as_secs_f32()
+                    );
+                }
+                if misses >= 8 {
+                    println!(
+                        "giving up: no channel {misses} times running. The headset is off, or something has the line."
+                    );
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_secs(every));
+                continue;
+            }
+        };
+        let now = session.equaliser()?;
+        match &seen {
+            None => {
+                print_bank(&now);
+                println!("that is the baseline; every line after it is somebody's edit.");
+                for warning in &session.warnings {
+                    println!("note: {warning}");
+                }
+            }
+            Some(before) => {
+                for line in eq_diff(before, &now) {
+                    println!("t+{:6.1}s  {line}", start.elapsed().as_secs_f32());
+                }
+            }
+        }
+        seen = Some(now);
+        if seconds != 0 && start.elapsed() >= Duration::from_secs(seconds) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_secs(every));
+    }
 }
 
 /// The equaliser as the headset reports it, and the tables it cannot explain.
@@ -2294,7 +2421,7 @@ fn annotate(value: &[u8]) -> String {
 
 #[cfg(all(windows, test))]
 mod tests {
-    use super::note;
+    use super::{eq_diff, note};
 
     #[test]
     fn the_sample_rate_frame_is_read_big_endian() {
@@ -2310,5 +2437,44 @@ mod tests {
         // it stays bytes, and a payload of the wrong length says nothing at all.
         assert_eq!(note(0x0880, &[0x08]), "");
         assert_eq!(note(momentum::cmd::PUSH_SAMPLE_RATE, &[0x00, 0x00]), "");
+    }
+
+    #[test]
+    fn eq_diff_reports_only_what_moved() {
+        use momentum::proto::state::Equaliser;
+        let before = Equaliser {
+            gains: vec![0, 10, -10],
+            hz: vec![Some(90), Some(325), Some(1500)],
+            ..Default::default()
+        };
+        let after = Equaliser {
+            gains: vec![0, 10, -20],
+            hz: vec![Some(90), Some(325), Some(1500)],
+            q12: vec![Some(2908), Some(2908), Some(2908)],
+            ..Default::default()
+        };
+        let diff = eq_diff(&before, &after);
+        // A whole table that arrived between the two reads is a change on every band:
+        // nothing had said what the Q was, and now something has.
+        assert_eq!(
+            diff,
+            [
+                "band 0: Q12 None → Some(2908)",
+                "band 1: Q12 None → Some(2908)",
+                "band 2: gain -1.0 → -2.0 dB",
+                "band 2: Q12 None → Some(2908)",
+            ]
+        );
+    }
+
+    #[test]
+    fn eq_diff_is_silent_when_nothing_moved() {
+        use momentum::proto::state::Equaliser;
+        let read = Equaliser {
+            gains: vec![0, 10],
+            hz: vec![Some(90), Some(325)],
+            ..Default::default()
+        };
+        assert!(eq_diff(&read, &read).is_empty());
     }
 }
