@@ -615,9 +615,9 @@ fn eq_tune(filter: &str) -> Result<(), Boxed> {
     let at = |row: &[Option<u16>], index: usize| row.get(index).copied().flatten().unwrap_or(0);
     let mut current: Vec<Band> = (0..eq.bands())
         .map(|index| Band {
-            hz: at(&eq.row_100b, index),
-            q: at(&eq.band_values, index),
-            kind: at(&eq.limits, index),
+            hz: at(&eq.hz, index),
+            q: at(&eq.q12, index),
+            kind: at(&eq.filter_types, index),
             tenths: (gains.get(index).copied().unwrap_or(0.0) * 10.0).round() as i8,
         })
         .collect();
@@ -757,72 +757,76 @@ fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
     use momentum::APP_BANDS_HZ;
 
     let db = eq.gains_db();
+    let q = |band: usize| {
+        eq.q12
+            .get(band)
+            .copied()
+            .flatten()
+            .map_or_else(|| "-".to_string(), |raw| format!("{:.3}", f64::from(raw) / 4096.0))
+    };
     // Two frequency columns, because the two disagree and nothing on the wire says
-    // which one the sliders are named after. `eq-set` takes the band **index**, which
-    // both tables agree on; the hertz are printed so a reader can find the slider.
-    println!("{:<4} {:>8}  {:>10}  {:>6}", "band", "app/Hz", "device/Hz", "dB");
+    // which one the sliders are named after. `eq-set` and `eq-tune` take the band
+    // **index**, which both tables agree on; the hertz are here so a reader can find the
+    // slider. `Hz`, `Q` and `type` are the filter bank the DSP describes, writable
+    // through `0x100a`, `0x100c` and `0x100e`.
+    println!(
+        "{:<4} {:>8}  {:>8}  {:>7}  {:>5}  {:>6}",
+        "band", "app/Hz", "Hz", "Q", "type", "dB"
+    );
     for band in 0..eq.bands() {
         println!(
-            "{:<4} {:>8}  {:>10}  {:>6}",
+            "{:<4} {:>8}  {:>8}  {:>7}  {:>5}  {:>6}",
             band,
             APP_BANDS_HZ
                 .get(band)
                 .map_or_else(|| "-".to_string(), |hz| hz.to_string()),
-            cell(&eq.row_100b, band),
+            cell(&eq.hz, band),
+            q(band),
+            cell(&eq.filter_types, band),
             db.get(band)
                 .map_or_else(|| "-".to_string(), |gain| format!("{gain:+.1}")),
         );
     }
     println!(
-        "dB is calibrated: ten raw units per decibel, read back exactly for a ramp \
-         of -6, -5, -4, -3, -2, -1, 0, +1 set in the app."
+        "dB is calibrated: ten raw units per decibel, read back exactly for a ramp of \
+         -6, -5, -4, -3, -2, -1, 0, +1 set in the app. Q is Q12 over 4096, so 0.707 is \
+         1/√2. Nothing here claims the audio path reads the frequency, Q or type: all \
+         three are writable and answer an ack, which is all that is known."
     );
 
-    // These carry their own band index, and nothing proves it is the app's band
-    // order — setting a decibel ramp across the sliders left every one of them
-    // untouched. Printing them against app/Hz would imply a relationship that has
-    // never been observed, so they get their own table and their own label.
-    if raw
-        && !(eq.row_100b.is_empty()
-            && eq.gains_wide.is_empty()
-            && eq.band_values.is_empty()
-            && eq.limits.is_empty())
-    {
-        println!(
-            "\nother tables, index space unproven — none moved when the sliders did"
-        );
-        // Raw hex next to the decimal: an unexplained number is worth keeping
-        // exactly as the device sent it, not as an interpretation of it.
+    // The wide gain store is a table of its own again: writable, range-checked, durable,
+    // never once touched by the app. It keeps a heading because it belongs to no control
+    // anyone has identified.
+    if raw && !eq.gains_wide.is_empty() {
+        println!("\nthe wide gain store — writable, inaudible, unexplained");
+        // Raw hex next to the decimal: an unexplained number is worth keeping exactly as
+        // the device sent it, not as an interpretation of it.
         let hexed = |row: &[Option<u16>], at: usize| {
             row.get(at).copied().flatten().map_or_else(
                 || "-".to_string(),
                 |v| format!("{v:#06x} ({v})"),
             )
         };
-        // Stored signed — `0x1010` accepted −180 and refused −182, so two's
-        // complement is a fact about representation, not a guess about units.
-        // Printing 65526 for what the device means as −10 is not neutrality, it is
-        // a display that manufactures mystery.
+        // Stored signed — `0x1010` accepted −180 and refused −182, so two's complement is
+        // a fact about representation, not a guess about units. Printing 65526 for what
+        // the device means as −10 is not neutrality, it is a display that manufactures
+        // mystery.
         let signed = |row: &[Option<u16>], at: usize| {
             row.get(at)
                 .copied()
                 .flatten()
                 .map_or_else(|| "-".to_string(), |v| (v as i16).to_string())
         };
-        println!(
-            "{:<4} {:>7}  {:>8}  {:>14}  {:>6}",
-            "row", "0x100b", "gain16/s", "value", "limit"
-        );
+        println!("{:<4} {:>8}  {:>16}", "band", "wide", "as sent");
         for row in 0..eq.bands() {
             println!(
-                "{:<4} {:>7}  {:>8}  {:>14}  {:>6}",
+                "{:<4} {:>8}  {:>16}",
                 row,
-                cell(&eq.row_100b, row),
                 signed(&eq.gains_wide, row),
-                hexed(&eq.band_values, row),
-                cell(&eq.limits, row),
+                hexed(&eq.gains_wide, row),
             );
         }
+
         if !eq.state.is_empty() {
             println!("0x1013 state, meaning unknown: {:02x?}", eq.state);
         }

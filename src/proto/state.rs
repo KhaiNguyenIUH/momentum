@@ -65,23 +65,28 @@ impl Charging {
 /// The equaliser tables, as the headset reports them.
 ///
 /// [`Equaliser::gains_db`] is the calibrated field: ten raw units per decibel,
-/// established against the app's own slider labels. Everything else is stored raw,
-/// including [`Equaliser::row_100b`], which looks like a frequency table and is not
-/// the graphic equaliser's bands — see [`APP_BANDS_HZ`] for what the app actually
-/// offers. Inventing units is what this struct is arranged to make awkward.
+/// established against the app's own slider labels. The other three tables describe a
+/// **bank of filters**, not the seven sliders: a centre frequency, a Q and a filter type
+/// per band, all three writable. They are named for what they are, which is recent — an
+/// earlier version of this struct called the Q `band_value` and the filter type `limit`,
+/// and the document that recorded ±14 dB as a range was reading a filter type as a
+/// decibel.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Equaliser {
     /// One signed byte per band, the compact form. All zero means flat.
     pub gains: Vec<i8>,
-    /// A per-band u16 from `0x100b`, in what is probably hertz — **but not** the
-    /// graphic EQ's centre frequencies, which are 50 Hz to 12 kHz (see
-    /// [`APP_BANDS_HZ`]). Eight values, ascending, belonging to some other filter
-    /// bank. Named for its command id rather than for a meaning it does not have.
-    pub row_100b: Vec<Option<u16>>,
-    /// Per-band u16 from `0x100d`, unit unidentified.
-    pub band_values: Vec<Option<u16>>,
-    /// Per-band limit from `0x100f`; `14` everywhere on a MOMENTUM 5.
-    pub limits: Vec<Option<u16>>,
+    /// Centre frequency per band, hertz, from `0x100b`: 90, 325, 1500, 2500, 4500,
+    /// 8000, 13000, 16000 on a MOMENTUM 5. **Not** the app's slider labels, which are
+    /// 50 Hz to 12 kHz — see [`APP_BANDS_HZ`]. This is the bank the DSP describes, and
+    /// `0x100a` writes it.
+    pub hz: Vec<Option<u16>>,
+    /// Q per band from `0x100d`, in **Q12**: divide by 4096. `0x0800` is 0.5 and
+    /// `0x0b5c` is 0.71, which is 1/√2 — the Butterworth value. Sennheiser's own
+    /// encoder multiplies Q by 4096, which is what settled the scale.
+    pub q12: Vec<Option<u16>>,
+    /// Filter type per band from `0x100f`. `14` on every band of a MOMENTUM 5. An
+    /// enumeration nobody has published, so it stays an integer.
+    pub filter_types: Vec<Option<u16>>,
     /// Per-band gain in the wide form, `0x1011`.
     pub gains_wide: Vec<Option<u16>>,
     /// The two-byte row of `0x1013`, kept verbatim.
@@ -92,9 +97,9 @@ pub struct Equaliser {
 ///
 /// Observed in the app, not read from the wire, and matched to band order — the
 /// app lists eight bands and the headset stores eight gains. That is why
-/// [`Equaliser::row_100b`] is not this: the device's own table says
-/// 90, 325, 1500, 2500, 4500, 8000, 13000, 16000, which is a different filter
-/// bank and whose purpose is not known.
+/// [`Equaliser::hz`] is not this: the device's own bank is 90, 325, 1500, 2500, 4500,
+/// 8000, 13000, 16000. Whether the app's labels are a naming of the same eight
+/// filters or a separate UI fiction has never been established.
 pub const APP_BANDS_HZ: [u16; 8] = [50, 100, 250, 600, 1400, 3000, 7000, 12000];
 
 impl Equaliser {
@@ -102,9 +107,9 @@ impl Equaliser {
     pub fn bands(&self) -> usize {
         [
             self.gains.len(),
-            self.row_100b.len(),
-            self.band_values.len(),
-            self.limits.len(),
+            self.hz.len(),
+            self.q12.len(),
+            self.filter_types.len(),
             self.gains_wide.len(),
         ]
         .into_iter()
@@ -401,9 +406,9 @@ impl DeviceState {
             Event::Product(text) => self.product = Some(text.clone()),
             Event::Firmware(text) => self.firmware = Some(text.clone()),
             Event::EqGains(gains) => self.eq.gains = gains.clone(),
-            Event::EqRow100b(rows) => self.eq.row_100b = rows.clone(),
-            Event::EqBandValues(rows) => self.eq.band_values = rows.clone(),
-            Event::EqLimits(rows) => self.eq.limits = rows.clone(),
+            Event::EqRow100b(rows) => self.eq.hz = rows.clone(),
+            Event::EqBandValues(rows) => self.eq.q12 = rows.clone(),
+            Event::EqLimits(rows) => self.eq.filter_types = rows.clone(),
             Event::EqGainsWide(rows) => self.eq.gains_wide = rows.clone(),
             Event::EqState(state) => self.eq.state = state.clone(),
         }
@@ -737,13 +742,13 @@ mod tests {
         assert_eq!(state.eq.bands(), 8);
         assert!(!state.eq.is_empty());
         assert_eq!(
-            state.eq.limits[1],
+            state.eq.filter_types[1],
             Some(14),
             "rows land at the index the headset named"
         );
-        assert_eq!(state.eq.limits.len(), 2, "only two limit rows were sent");
+        assert_eq!(state.eq.filter_types.len(), 2, "only two limit rows were sent");
         assert_eq!(
-            state.eq.limits.get(7),
+            state.eq.filter_types.get(7),
             None,
             "a band nobody described stays absent, not zero"
         );
