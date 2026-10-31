@@ -294,6 +294,24 @@ impl<L: Link> Session<L> {
         self.set_and_confirm(cmd::SET_BASS_BOOST, u8::from(on), cmd::GET_BASS_BOOST)
     }
 
+    /// Write one band of the user equaliser and read it back.
+    ///
+    /// `tenths` is the headset's own unit — decibels times ten, signed — because that
+    /// is what the wire carries: `0x1001 [band, gain]` answers an empty ack and then
+    /// pushes the whole table, and `0x1002 [band]` reads one band back. The band's
+    /// limits come from the configuration frame, not from here: a value outside them is
+    /// refused with error `5`, and the refusal saying so beats us clamping to a range
+    /// we assumed. The change is audible and it survives power-off.
+    ///
+    /// `None` means the read-back arrived without a byte in it, which has not been
+    /// seen. Reporting that as "unknown" rather than as the value we asked for is the
+    /// difference between a tool and a wish.
+    pub fn set_eq_gain(&mut self, band: u8, tenths: i8) -> Result<Option<i8>> {
+        self.request(cmd::SET_EQ_GAIN, [band, tenths as u8], DEFAULT_TIMEOUT)?;
+        let reply = self.request(cmd::GET_EQ_GAIN, [band], DEFAULT_TIMEOUT)?;
+        Ok(reply.payload.first().copied().map(|byte| byte as i8))
+    }
+
     /// Query everything we display. Commands this firmware does not answer
     /// become warnings instead of failing the whole refresh, because the
     /// command set differs between MOMENTUM models.
@@ -371,6 +389,34 @@ mod tests {
             .open(&[cmd::feature::ANC])
             .expect_err("no ack means no session");
         assert!(matches!(err, Error::Timeout { cmd: 0x0007, .. }));
+    }
+
+    #[test]
+    fn writing_a_band_sends_one_band_and_asks_for_it_back() {
+        // Measured shape: `[band, gain]` in, empty ack, then the read-back answers
+        // with the byte the device is storing.
+        let link = MockLink::replaying([
+            reply(cmd::reply_to(cmd::SET_EQ_GAIN), &[]),
+            reply(cmd::reply_to(cmd::GET_EQ_GAIN), &[0x14]),
+        ]);
+        let mut session = Session::new(link);
+        assert_eq!(session.set_eq_gain(3, 20).expect("write"), Some(0x14));
+        assert_eq!(
+            session.link().sent_cmds(),
+            vec![cmd::SET_EQ_GAIN, cmd::GET_EQ_GAIN],
+            "a setter must verify what it wrote"
+        );
+    }
+
+    #[test]
+    fn a_negative_band_survives_the_wire_as_itself() {
+        // −1.0 dB is `f6` and reads back signed, not as a large unsigned number.
+        let link = MockLink::replaying([
+            reply(cmd::reply_to(cmd::SET_EQ_GAIN), &[]),
+            reply(cmd::reply_to(cmd::GET_EQ_GAIN), &[0xf6]),
+        ]);
+        let mut session = Session::new(link);
+        assert_eq!(session.set_eq_gain(6, -10).expect("write"), Some(-10));
     }
 
     #[test]

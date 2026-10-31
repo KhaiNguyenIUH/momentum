@@ -125,19 +125,27 @@ pub const PUSH_TRANSPARENCY_LEVEL: u16 = 0x1A83;
 /// Push carrying the transparency on/off flag. (confirmed)
 pub const PUSH_TRANSPARENCY_ON: u16 = 0x1885;
 
-/// The equaliser, in its own command range. Read live from a MOMENTUM 5.
+/// How many bands the user equaliser has, and the range each accepts.
 ///
-/// Two things about this block are unlike the rest of the protocol and cost
-/// measurement to learn. First, the base ids **refuse a bare read** with `05`:
-/// they take a band index, and the complete tables arrive unprompted when
-/// [`REGISTER_FEATURE`] is sent with [`feature::EQ`]. Second, the even/odd rule
-/// seen elsewhere holds — the even id writes, the odd one reads — which is how
-/// `0x1010` was found to accept a gain, answering an empty ack and then pushing
-/// the table again.
+/// The reply is `bands, min, max, selectable_presets, user_presets`, all one byte
+/// except the two gains, which are signed tenths of a dB. Measured on MOMENTUM 5:
+/// `08 c4 3c 00 00` — **eight bands, −6.0 dB to +6.0 dB**. This is where a client
+/// learns the limits instead of assuming them. (live)
+pub const GET_EQ_CONFIG: u16 = 0x1000;
+/// Write one band: `[band, gain]`, gain signed in tenths of a dB. Answers an empty
+/// ack and then pushes the whole table. (live: `[00, 3c]` → `0x1101 []`, then
+/// `0x1082`)
 ///
-/// The gains are one signed byte per band with flat reported as zero, but the
-/// **scale is unmeasured**: no write other than the value already in effect has
-/// been sent, so this crate does not translate bytes into decibels.
+/// The unit was settled by Sennheiser's own device model, which names this command
+/// `UserEQ_SetSliderGain` with `UINT8 band, INT8 gain(dB × 10)`, and by the read-back
+/// agreeing band for band. Note that the user equaliser is only *heard* in audio mode
+/// `userEq`; a write that lands while another mode is active is real but inaudible.
+pub const SET_EQ_GAIN: u16 = 0x1001;
+/// Read one band: `[band]` in, one signed byte out. (live: `0x1002 [00] → 0x1102 [3c]`)
+pub const GET_EQ_GAIN: u16 = 0x1002;
+/// Unresolved neighbour of the two above. Every payload tried — empty, one byte,
+/// eight, sixteen, twenty-four — was refused, so it is not the gains getter it looks
+/// like. Kept because a named unknown is easier to find again than a bare number.
 pub const GET_EQ_GAINS: u16 = 0x1003;
 /// A per-band u16 from `0x100b`, ascending, in what is probably hertz.
 ///
@@ -197,13 +205,13 @@ pub const PUSH_EQ_STATE: u16 = 0x1093;
 /// PC, which is Windows' default output. Live on MOMENTUM 5, firmware 6.21.1.
 pub const PUSH_SAMPLE_RATE: u16 = 0x089A;
 
-/// A one-byte link state, from the same feature as the sample rate.
+/// Which codec the headset actually settled on, in one byte.
 ///
-/// Observed values: `02` at rest, `ff` while a stream was being renegotiated, `08`
-/// while a phone streamed at 48 kHz. Those three are facts; what the bits mean is not
-/// established, and the name keeps the claim as small as the evidence. An earlier name
-/// for this frame promised *stability* and was a guess wearing a label.
-pub const PUSH_AUDIO_LINK: u16 = 0x0880;
+/// Measured here: `ff` with nothing streaming, `02` and `08` during real playback.
+/// Sennheiser's own device model calls the same command `Sound_CodecUsed` and names the
+/// values `02` aptX, `08` aptX Adaptive, `ff` none — which is why this stopped being a
+/// mystery byte. An earlier name here promised a "link state", a guess wearing a label.
+pub const PUSH_CODEC: u16 = 0x0880;
 
 /// Read the serial number. The payload of the reply is ASCII digits.
 ///
@@ -281,6 +289,17 @@ pub fn name(cmd: u16) -> &'static str {
         GET_EQ_STATE => "get_eq_state",
         PUSH_EQ_STATE => "eq_state_push",
         0x1102 => "eq_gain_band_reply",
+        GET_EQ_CONFIG => "get_eq_config",
+        SET_EQ_GAIN => "set_eq_gain",
+        GET_EQ_GAIN => "get_eq_gain",
+        0x1100 => "eq_config_reply",
+        0x1101 => "eq_gain_set_ack",
+        // The codec actually in use, and the audio mode that decides whether the user
+        // equaliser is audible at all. Both read via their `+0x100` reply.
+        0x0900 => "codec_reply",
+        0x0904 => "audio_mode_reply",
+        0x1301 => "firmware_three_part_reply",
+        0x1306 => "model_reply",
         0x110b => "eq_frequency_reply",
         0x110d => "eq_band_value_reply",
         0x110f => "eq_limit_reply",
@@ -297,7 +316,7 @@ pub fn name(cmd: u16) -> &'static str {
         // link, `ff` for the moment the link is renegotiated, `08` while a phone
         // streamed at 48 kHz. What the values mean is still unknown, so the name says
         // only that it belongs to the link.
-        PUSH_AUDIO_LINK => "audio_link_push",
+        PUSH_CODEC => "codec_push",
         PUSH_SAMPLE_RATE => "sample_rate_push",
         0x1A81 => "mode_list_push",
         0x2C83 => "wear_push",

@@ -88,11 +88,9 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
-    /// Print the equaliser: every band with its centre frequency and the values
-    /// the headset stores for it. Read-only by design — the write path exists on
-    /// the wire and was confirmed with a no-op, but the gain scale in decibels
-    /// has never been measured, and this tool will not print a number it cannot
-    /// account for.
+    /// Print the equaliser: every band and the value the headset stores for it, in
+    /// decibels. The scale is measured — ten units to the decibel, read back from a
+    /// ramp the phone app set — and the range is what the device itself reports.
     Eq {
         /// Select by service name or peer address; empty means any.
         #[arg(long, default_value = "")]
@@ -103,6 +101,23 @@ enum Command {
         /// bands, so they are off by default rather than labelled carefully.
         #[arg(long)]
         raw: bool,
+    },
+    /// Move one equaliser band, in decibels, and read it back. Audible at once, and
+    /// the headset keeps the curve after power-off. Bands are numbered the way the
+    /// device numbers them, which is what `momentum eq` prints; the device refuses a
+    /// value outside its own range rather than this tool guessing where that range is.
+    ///
+    /// One caveat the headset enforces silently: the user equaliser is only heard in
+    /// the `userEq` audio mode. A write that lands while another mode is active is
+    /// real, stored, and inaudible until that mode is selected.
+    EqSet {
+        /// Band index, as `momentum eq` prints it.
+        band: u8,
+        /// Gain in decibels: `-3`, `2.5`, `0`. Stored in tenths.
+        gain: f32,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
     },
     /// Interactive step-by-step listener, for experiments where a human is the one
     /// doing something physical. Registers the given features, prints what arrives,
@@ -332,6 +347,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
         Command::Eq { filter, raw } => Some(eq(filter, *raw)),
+        Command::EqSet { band, gain, filter } => Some(eq_set(*band, *gain, filter)),
         Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
@@ -501,6 +517,28 @@ fn status(filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
+/// Move one equaliser band, then read it back, so the number printed is the number
+/// the headset is storing rather than the one we asked for.
+#[cfg(windows)]
+fn eq_set(band: u8, gain: f32, filter: &str) -> Result<(), Boxed> {
+    let tenths = (gain * 10.0).round();
+    if !gain.is_finite() || tenths.abs() > 127.0 {
+        return Err(format!("{gain} dB is not something a signed byte of tenths can hold").into());
+    }
+    let mut session = open_session(filter)?;
+    match session.set_eq_gain(band, tenths as i8)? {
+        Some(read) => println!(
+            "band {band}: asked for {:+.1} dB, the headset now reports {:+.1} dB.",
+            gain,
+            f32::from(read) / 10.0
+        ),
+        // Saying so beats reporting the value we wanted.
+        None => println!("band {band}: the write was acked; the read-back carried no byte."),
+    }
+    println!("that is audible now, and the headset keeps the curve when it is switched off.");
+    Ok(())
+}
+
 /// The equaliser as one table. The `dB` column is calibrated; the rest are raw
 /// values whose units the wire has not established, including the device's own
 /// band table, which disagrees with the app about where the bands are.
@@ -525,14 +563,18 @@ fn eq(filter: &str, raw: bool) -> Result<(), Boxed> {
     use momentum::APP_BANDS_HZ;
 
     let db = eq.gains_db();
-    println!("{:<4} {:>8}  {:>6}", "band", "app/Hz", "dB");
+    // Two frequency columns, because the two disagree and nothing on the wire says
+    // which one the sliders are named after. `eq-set` takes the band **index**, which
+    // both tables agree on; the hertz are printed so a reader can find the slider.
+    println!("{:<4} {:>8}  {:>10}  {:>6}", "band", "app/Hz", "device/Hz", "dB");
     for band in 0..eq.bands() {
         println!(
-            "{:<4} {:>8}  {:>6}",
+            "{:<4} {:>8}  {:>10}  {:>6}",
             band,
             APP_BANDS_HZ
                 .get(band)
                 .map_or_else(|| "-".to_string(), |hz| hz.to_string()),
+            cell(&eq.row_100b, band),
             db.get(band)
                 .map_or_else(|| "-".to_string(), |gain| format!("{gain:+.1}")),
         );
@@ -647,15 +689,15 @@ fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
     let started = Instant::now();
     let deadline = started + Duration::from_secs(seconds);
     let mut rate: Option<u32> = None;
-    let mut link_state: Option<Vec<u8>> = None;
+    let mut codec: Option<u8> = None;
     while Instant::now() < deadline {
         let Some(frame) = momentum::Link::read_frame(&mut link, Duration::from_millis(500))? else {
             continue;
         };
         if frame.cmd == momentum::cmd::PUSH_SAMPLE_RATE && frame.payload.len() == 4 {
             rate = Some(u32::from_be_bytes(frame.payload[..4].try_into().unwrap()));
-        } else if frame.cmd == momentum::cmd::PUSH_AUDIO_LINK {
-            link_state = Some(frame.payload.clone());
+        } else if frame.cmd == momentum::cmd::PUSH_CODEC {
+            codec = frame.payload.first().copied();
         }
         println!(
             "  t+{:6.1}s  0x{:04x} {:<22} {:02x?}{}",
@@ -675,8 +717,19 @@ fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
         ),
         None => println!("no sample-rate frame in {seconds}s of listening."),
     }
-    if let Some(state) = link_state {
-        println!("last link state, meaning unestablished: {state:02x?}");
+    match codec {
+        // Named where the byte has a name — from Sennheiser's own command table — and
+        // printed as it arrived everywhere else.
+        Some(byte) => {
+            let name = match byte {
+                0x02 => "aptX",
+                0x08 => "aptX Adaptive",
+                0xff => "none: nothing is streaming",
+                _ => "unnamed on this unit",
+            };
+            println!("codec {byte:#04x}: {name}.");
+        }
+        None => println!("no codec frame arrived, so there was nothing to report."),
     }
     Ok(())
 }

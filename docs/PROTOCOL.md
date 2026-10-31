@@ -606,7 +606,9 @@ Worth noting what the refusals are *not*: they are `01`, unexpected code, rather
 `05`, not supported, and `0x1A05` in the same block works fine as `get_anc`. Those
 command slots exist in the dispatch table and are rejecting the request, which is not
 the same as there being nothing there — it means a payload length or sub-code we have
-not found. The equaliser write is still unfound.
+not found. The equaliser write was still unfound then, and the reading in that sentence — a payload
+length we had not found, not a missing command — was the correct one. See *The equaliser
+write*.
 
 The pattern behind the score is worth keeping too: everything the answer got right
 was the part a model could have read off a description of the product, and everything
@@ -719,6 +721,9 @@ tell those apart.
 ## A PC posing as a headset: how far it gets
 
 The equaliser write comes from the app, and nothing on this side of the air can see it.
+That premise is why this was worth the afternoon; it also turned out to be unnecessary,
+because the write reached a control link we already had as soon as its payload was known.
+The experiment below stands as a measured dead end either way.
 So reverse the direction: Smart Control dials a headset by service UUID, therefore a PC
 holding that UUID is a headset as far as the app knows. `momentum host` tests that in
 two stages, and the answer is a yes and a no, both worth recording.
@@ -791,24 +796,62 @@ and it separates two refusals we had been treating as one:
 | sent | answer | meaning |
 | --- | --- | --- |
 | `0x1a01` | `0x1b01 [01,00, 03,00, 02,00]` | three records: the noise-control modes offered |
-| `0x1a03` | `0x1b03 [64]` | answers 100, ignores its payload, and is **not** battery, which reads 90 |
+| `0x1a03` | `0x1b03 [64]` | the transparency level — 100 — not battery, which reads 90 |
 | `0x1a05` | `0x1b05 [01]` | the current noise-control mode |
-| `0x1a00`, `1a02`, `1a04` | `[05]` | no such command |
+| `0x1a02`, `1a04` | `[05]` empty, **accepted** with one byte | the setters, one below their getters |
+| `0x1a00` | `[05]` | still unresolved |
 | `0x1a06`–`0x1a0f` | `[01]` | **refused, and the payload is not why** |
 
-The distinction was demonstrated rather than assumed. A command that answers an empty
-payload becomes `[05]` the moment a payload is added — `0x1a05` and `0x1009` both do it,
-and `0x100f` answered `[82]` — so the form is part of the command's identity. Meanwhile
-`0x1a06`–`0x1a0f` answer `[01]` to one byte, to eight, to twenty, to the current equaliser
-curve, to the current mode, and before or after declaring their feature. One hundred and
-forty payload variants, and not one of them changed the answer.
+**What this section concluded at the time was wrong, and the correction is the useful
+part.** The frame `0x1008 [01]` — bass boost, written with the value it already held —
+came back **accepted**, and `0x1008` had answered `[05]` to an empty payload and to nine
+bytes. So `[05]` is not *no such command*: it is a refusal of the **form**. Every one of
+those sweeps had sent a payload shaped for a different command and reported the resulting
+form error as though the id were absent.
 
-So `[05]` is *no such command* and `[01]` is *this command will not run for this client*.
-Every command that reads works from this second control link; every command that could
-write answers `[01]`. The distinction is not which host is connected — these attempts
-were made with the PC as the **only** host — and not the payload, not the length and not
-whether the feature was declared. What remains is that the write path expects a client
-that announced itself as something this connection has not.
+```
+0x1008 [01]  →  0x1108 []          bass boost, written as it stood
+0x1a02 [64]  →  0x1b02 []          transparency, written at its own reported level
+0x1a04 [01]  →  0x1b04 []          noise control, written as it stood
+```
+
+Three setters, each accepted, each carrying the getter's own reply so that accepting them
+changed nothing. That is the rule the accepted writes obey: **a setter's payload is its
+getter's payload**, and setters sit **one below** their getters — `0x1A04`/`0x1A05`,
+`0x1A02`/`0x1A03`, `0x1008`/`0x1009`, all three from a table of the Momentum 4 derived
+statically from Sennheiser's own app rather than from any guess of ours.
+
+`[01]` remains unexplained. What is now certain is that it is not a statement about the
+client: it survived 140 payload variants, and the ids around it accept writes.
+
+## The equaliser write
+
+`0x1001 [band, gain]`, gain signed in **tenths of a decibel**. It answers an empty ack at
+`0x1101`, then pushes the whole table at `0x1082` — to every control connection, including
+one that never asked. Proven by moving a band and putting it back:
+
+```
+momentum eq-set 3 2.0   →  0x1082 [3c, 0b, c4, 14, 0a, 14, f6, 0a]    band 3 = +2.0 dB
+momentum eq-set 3 0     →  0x1082 [3c, 0b, c4, 00, 0a, 14, f6, 0a]    restored
+```
+
+One band reads as `0x1002 [band]` → `0x1102 [gain]`. The device's own limits come from
+`0x1000` → `0x1100 [08, c4, 3c, 00, 00]`: **eight bands, −6.0 dB to +6.0 dB**. Two tables
+in this block were therefore misread here for weeks: `0x108f` is a list of **filter
+types**, not a ±14 dB limit — the limit was in `0x1100` all along — and `0x108d`'s `0x0b5c`
+is a **Q factor** in Q12, 2908/4096 = 0.71, which is 1/√2.
+
+The id, the payload and the unit came from outside. [xndbogdan's protocol
+map](https://github.com/xndbogdan/sennheiser-control/blob/main/PROTOCOL.md) is derived
+from Sennheiser's Smart Control APK, whose device logic is JavaScript and whose
+per-product command tables are declarative JSON: `m4.json`, `UserEQ_SetSliderGain`,
+`UINT8 band, INT8 gain`. A byte on the wire and a table in an APK agreeing is worth more
+than either alone — which is how a week of guessing payload *shapes* ended in two bytes.
+The same map names frames this project had given up on: `0x0880` is the **codec in use**
+(`02` aptX, `08` aptX Adaptive, `ff` none — what we called a link state was a codec
+indicator), `0x0804` is the audio mode, and `0x1306` is the model, which reads
+`M5AEBT Denim` on this unit. And the user equaliser is only **heard** when the audio mode
+is `userEq`: a write that lands under another mode is stored, correct, and silent.
 
 ## The Bluetooth LE side, for as far as Windows can see it
 
@@ -856,8 +899,8 @@ been asked for:
 | frame | contents |
 | --- | --- |
 | `0x108b eq_frequency_push` | eight `(index, u16 big-endian)` entries: **90, 325, 1500, 2500, 4500, 8000, 13000, 16000 Hz** |
-| `0x108f eq_limit_push` | `0e` for all eight bands: the range is **±14 dB**, not the ±20 dB a drawn table of commands once claimed |
-| `0x1091 eq_gain_wide_push` | eight entries of three bytes, all zero: a second, wider gain store that has never been written |
+| `0x108f eq_limit_push` | eight `(index, u8)` entries, `0e` on every band. Named a **limit**; the app's own table calls the same command *filter types*, and 14 as a type is the reading that survives the comparison |
+| `0x1091 eq_gain_wide_push` | eight `(index, u16)` entries, all zero: a second, wider gain store, written one band at a time by `0x1010` |
 
 An earlier reading of this table called the first band a shelf at 0 Hz. It is not: the
 leading byte of each entry is an **index**, as it is in every table in this block, so the
@@ -867,11 +910,11 @@ is the first byte, whatever the two tables think that band is called.
 ## Still unknown
 - **Find my headphones.** No confirmed id. It will be a command that makes sound,
   so it should be found in a capture of the phone app rather than by probing.
-- **The equaliser write.** The scale is measured — tenths of a dB, signed, eight bytes —
-  and the read side is complete. No id has accepted a gain table from this connection:
-  see *The `0x1a` block* for why `[01]` is not a payload complaint. What remains is the
-  chance the write expects a client that authenticated first, which is not something this
-  transport has been seen to ask for.
+- **The wide gain store.** `0x1010` writes a band of it and `0x1091` reports it, and the
+  app never touches it on this unit. Whether it is a second preset, an unused generation
+  of the same feature, or something the DSP reads in another audio mode is open.
+- **What `[01]` refuses.** See *The `0x1a` block*: not the payload, not the client, and
+  not the id's existence.
 - **`0x1a81`, seen twice during the same capture**, payload `01 01 03 00 02 00` and
   once as `01 00 03 00 02 00`. That is `0x1a01` with the notification bit, so it
   belongs to the noise-control feature and the shape reads like three (mode, value)

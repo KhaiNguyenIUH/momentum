@@ -70,13 +70,14 @@ answers.
 | `status` | Noise-control mode, ambient level, battery, bass boost, and the device line |
 | `info` | Product name, firmware version with build stamp, serial number |
 | `eq` | The eight bands and their gain in decibels; `--raw` adds the tables we cannot yet explain |
+| `eq-set <band> <dB>` | Move one band, read it back, and mean it: the change is stored and audible |
 | `anc <on\|off>` | Noise cancelling |
 | `transparency <0..=100>` | Transparent-hearing level; `0` turns it off |
 | `bass <on\|off>` | Bass boost |
 | `volume [0..=100]` | Playback volume, `--list` to see devices — via Windows, not the headset |
 | `mute [on\|off]` | Mute that endpoint; the level survives it |
 | `watch [--seconds N] [--raw]` | Live state pushes, decoded or raw |
-| `audio [--seconds N]` | The stream the codec agreed to — sample rate and link state, straight from the headset |
+| `audio [--seconds N]` | The sample rate the headset is decoding and the codec in use, straight from the headset |
 | `probe [--cmd 1A05 --payload 01 --vendor 495]` | Send queries, print answers; the reverse-engineering tool |
 | `steps [--script wear\|buttons] [--out file]` | Listener you drive by hand: it names the state to put the headphones in, waits for Enter, and attributes every frame to that step |
 | `host [--serve]` | Ask whether Windows will let this PC hold the control service — and with `--serve`, hold it, advertise it and log whatever a client sends |
@@ -105,13 +106,17 @@ pushes, so a long-lived `watch` loop and a one-shot `status` share the same code
 
 ## Notes on real hardware
 
-- **`eq` is read-only, and now for a cleaner reason than it was.** The gain scale
-  is measured — ten raw units per decibel, established by setting every band to
-  −6 dB in Smart Control and reading −60 on all eight — so the table prints real
-  decibels. What is *not* known is which command the app writes with: the byte
-  store refused every write shape tried on it, and the store that does accept
-  writes has never been heard to change the sound. Reading is finished; writing
-  needs the phone's command, not a guess.
+- **The equaliser writes, after a week of the wrong payload shape.** `momentum eq-set 3 2.5`
+  sends `0x1001 [band, gain]` — one band, gain signed in tenths of a decibel — and prints
+  what the headset reports back, which is the number that is stored. The id and its two-byte
+  payload came from outside: Sennheiser's own app carries the command table as JSON, and
+  [xndbogdan's protocol map](https://github.com/xndbogdan/sennheiser-control/blob/main/PROTOCOL.md)
+  publishes it as `UserEQ_SetSliderGain`. Every shape we had guessed — the eight-byte curve,
+  sixteen, twenty-four — was the whole table where the device wants one band. The limits are
+  the device's own too: `0x1000` answers eight bands, −6.0 to +6.0 dB.
+- **The equaliser is only audible in one audio mode.** `0x0804` reports it, and the user
+  curve is heard when the mode is `userEq`. A write made under another mode is stored
+  correctly and heard not at all.
 - **Volume is not a headset command.** It travels over AVRCP as "absolute
   volume", and Windows owns that negotiation, so `momentum volume` sets the
   endpoint's master volume — the tray slider's own path, which for Bluetooth
