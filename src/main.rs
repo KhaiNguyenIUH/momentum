@@ -104,6 +104,31 @@ enum Command {
         #[arg(long)]
         raw: bool,
     },
+    /// Interactive step-by-step listener, for experiments where a human is the one
+    /// doing something physical. Registers the given features, prints what arrives,
+    /// then waits: **press Enter to close a step** and start the next one, `q` to
+    /// quit. Nothing is timed from here, and nothing runs in the background — the
+    /// frames between two presses belong to whatever you did in between. Add
+    /// `--out log.txt` to keep the transcript for afterwards.
+    Steps {
+        /// Feature ids to register, hex: `04`, `01-1f`, `04,08`.
+        #[arg(long, default_value = "04")]
+        features: String,
+        /// RFCOMM server channel, as for `probe`.
+        #[arg(long)]
+        channel: Option<u32>,
+        /// Also write every line to this file.
+        #[arg(long)]
+        out: Option<String>,
+        /// Read the experiment aloud, one step at a time: `wear` or `buttons`.
+        /// Each step says exactly what state to put the headphones in and waits for
+        /// Enter, so every frame is attributed to a state you know.
+        #[arg(long)]
+        script: Option<String>,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Temporary listening test: write an ascending −6 … +6 dB tilt into the
     /// writable u16 store (`0x1010`), then read it back from the device and report
     /// whether it stuck. This is the store this host can write, and the one no ear
@@ -279,6 +304,13 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             list,
         } => Some(volume(*level, filter, *list)),
         Command::Mute { state, filter } => Some(mute(state.as_deref(), filter)),
+        Command::Steps { features, channel, out, script, filter } => Some(steps(
+            features,
+            filter,
+            *channel,
+            out.as_deref(),
+            script.as_deref(),
+        )),
         Command::Probe {
             seconds,
             filter,
@@ -686,6 +718,165 @@ fn byte_spec(text: &str) -> Result<Vec<u8>, Boxed> {
         return Err("empty byte spec".into());
     }
     Ok(out)
+}
+
+/// Experiment scripts for `steps`: exact states, in order, so the headset's
+/// condition at any frame is never in doubt. Wording matters here — each line says
+/// what to touch, in which order, and for how long, because an unlabelled frame is
+/// worth nothing.
+#[cfg(windows)]
+const SCRIPTS: &[(&str, &[&str])] = &[
+    (
+        "wear",
+        &[
+            "Headphones ON your head, nothing playing. Do nothing: this is the baseline.",
+            "Take them OFF your head and hold them in your hands. Count ten seconds.",
+            "Put them back ON your head. Count ten seconds.",
+            "Still wearing them. On the phone: Bluetooth on, open Smart Control, turn \
+             WEAR DETECTION ON. (It will re-apply your saved EQ — that is a different \
+             table and does not disturb this one.)",
+            "Take them OFF your head. Count ten seconds.",
+            "Put them back ON your head. Count ten seconds.",
+            "Take them off and press the power button until they switch OFF.",
+        ],
+    ),
+    (
+        "buttons",
+        &[
+            "Headphones ON your head, nothing playing. Do nothing: this is the baseline.",
+            "Press the noise-control button ONCE.",
+            "Press it once more to go back to where you started.",
+            "Press and hold the noise-control button to switch to transparency.",
+            "Volume up twice, then volume down twice.",
+            "Press play on the phone, count five seconds, press pause.",
+        ],
+    ),
+];
+
+/// Drive an experiment by hand: every Enter closes a step, so the frames in each
+/// block belong to whatever was done while that block was open.
+///
+/// Deliberately synchronous. Listening in the background and hoping the physical
+/// action lands inside the window is fragile in exactly the way this is not: the
+/// human decides when a step begins and ends, and the transcript says so.
+#[cfg(windows)]
+fn steps(
+    features: &str,
+    filter: &str,
+    channel: Option<u32>,
+    out: Option<&str>,
+    script: Option<&str>,
+) -> Result<(), Boxed> {
+    use std::io::{BufRead, Write as _};
+    use std::sync::mpsc;
+
+    let mut link = connect_first(filter, false, channel)?.into_link();
+    let ids = byte_spec(features)?;
+    let mut file = out.map(std::fs::File::create).transpose()?;
+    // One path to the screen and to the file, so the transcript cannot drift from
+    // what was watched.
+    let mut say = |line: &str| {
+        println!("{line}");
+        if let Some(file) = file.as_mut() {
+            let _ = writeln!(file, "{line}");
+            let _ = file.flush();
+        }
+    };
+
+    for id in ids {
+        let frame = command(
+            momentum::proto::frame::VENDOR_QUALCOMM,
+            momentum::cmd::REGISTER_FEATURE,
+            vec![id],
+        );
+        say(&format!(">> register feature {id:02x}"));
+        momentum::Link::write_frame(&mut link, &frame)?;
+    }
+
+    // Enter arrives on a thread because reading stdin blocks, and a blocked read
+    // would hold the whole loop still while frames pile up unread.
+    let (tx, rx) = mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            match line {
+                Ok(line) => {
+                    if tx.send(line).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let started = Instant::now();
+    let mut step = 0usize;
+    let mut since = 0usize;
+    let script: Vec<&str> = match script {
+        None => Vec::new(),
+        Some(name) => SCRIPTS
+            .iter()
+            .find(|(named, _)| *named == name)
+            .map(|(_, lines)| lines.to_vec())
+            .ok_or_else(|| {
+                format!(
+                    "no script called {name}. there are: {}",
+                    SCRIPTS.iter().map(|(named, _)| *named).collect::<Vec<_>>().join(", ")
+                )
+            })?,
+    };
+    let mut next = usize::from(!script.is_empty());
+    let instruct = |index: usize, say: &mut dyn FnMut(&str)| {
+        if index < script.len() {
+            say(&format!(
+                "\n>>> STEP {}: {}\n    do that now, then press Enter. every frame until \
+                 then belongs to this step.\n",
+                index + 1,
+                script[index]
+            ));
+        }
+    };
+    say("listening. `q` then Enter quits at any time; frames are stamped from now.");
+    instruct(0, &mut say);
+    loop {
+        if let Some(frame) = momentum::Link::read_frame(&mut link, Duration::from_millis(150))? {
+            since += 1;
+            say(&format!(
+                "  t+{:6.1}s  << vendor 0x{:04x}  0x{:04x} {:<22} {:02x?}",
+                started.elapsed().as_secs_f32(),
+                frame.vendor,
+                frame.cmd,
+                momentum::cmd::name(frame.cmd),
+                frame.payload,
+            ));
+            continue;
+        }
+        if let Ok(line) = rx.try_recv() {
+            if line.trim().eq_ignore_ascii_case("q") {
+                break;
+            }
+            step += 1;
+            say(&format!(
+                "── step {step}: {since} frame(s) since {} ──",
+                if step == 1 {
+                    "registration"
+                } else {
+                    "the previous Enter"
+                }
+            ));
+            if script.is_empty() {
+                say("press Enter to close the next step, or `q` to quit.");
+            } else if next < script.len() {
+                instruct(next, &mut say);
+                next += 1;
+            } else {
+                say("\nscript finished. press `q` then Enter to leave.");
+            }
+            since = 0;
+        }
+    }
+    say(&format!("quit after {step} step(s); {}", momentum::Link::diagnostics(&link)));
+    Ok(())
 }
 
 /// Send read-only queries and print whatever answers.
