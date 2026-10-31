@@ -1044,6 +1044,41 @@ where before both channels opened. The tool tries 0 then 1 and so does not notic
 client that binds one channel and does not retry will now fail intermittently until the
 device is re-paired.
 
+### Personalisation is real, audible, and not in the equaliser block
+
+The app put this unit into `personalized` — the first third-party write caught on this
+device, and it was `0x0803 [00, 03]`, the same command `momentum mode personalized` sends.
+With the mode set and the hearing profile applied, the equaliser block was read in full and
+answered exactly as it had before: eight bands flat, factory frequencies, Q12 `0x0b5c`
+everywhere, the wide store all zeros, `0x1013` `[00, 00]`. And the sound was different.
+
+So there is a fourth store, outside feature `0x10`, which the DSP reads and nothing in the
+command space we have decoded exposes. That is the first thing on this device to be audible
+without being visible in the equaliser, and it retires the wide store's last excuse: it
+survived the sliders, the tilt experiments, and now a hearing profile it was not given.
+
+A sweep of every feature registration, `00` through `2f`, in that state produced 121 frames
+and several ids seen for the first time, recorded here as bytes because their meaning is
+unknown:
+
+```
+0x3681 [01, 00]   0x3683 [00]   0x3685 [00]        feature 36 — beyond the range ever swept before
+0x1491 [50, 8e, 49, 6f, 38, c5, 01, 00]            feature 14, pushed twice, monotonic-looking
+0x1494 [b4, 0e, de, 4a, 9e, 39, 00]
+0x1687 [00]       0x2081 [02]   0x208a [01] / [00]
+```
+
+**`0x0884` is very likely the audio-mode push** — `0x0804 | 0x80`, the notify bit the id
+grammar predicts, and it carried `[00, 03]` and `[00, 01]`, each time paired with `0x208a`
+carrying `[01]` and `[00]` respectively. One observation of a transition is not a decoding,
+so this stays *probable* until it is seen to move on a command rather than alongside one. If
+it holds, a client no longer has to poll the mode.
+
+The mode itself went back to `1` between two reads a minute apart, with nothing from this
+program in between — plausibly the app restoring it when its personalisation screen closed,
+which nobody has confirmed either way. Worth knowing before anything is built on the mode
+being sticky: **it is only as persistent as the last client that wrote it.**
+
 ### There is no parametric equaliser on this unit
 
 The theory was worth testing and is now dead, so the four things that killed it are worth
@@ -1098,6 +1133,10 @@ mode numbers come from Smart Control Plus's `Lgb` enum, shared across the produc
 the same source's M4 feature list reads *Equalizer v2 — graphic EQ, no parametric*. Nothing
 here contradicts that; the MOMENTUM 5 simply carries the enum and not the feature. Why the
 unit was found in mode 4 at all, nobody having sent the command, is unresolved.
+
+Contrast this with `personalized`, below, which is audible with nothing in the equaliser
+block changed: the mode numbers are not a set of labels where some are honest and some are
+lies, they are features, and this unit has some of them and not others.
 
 All three parameters are on the command line now, as `momentum eq freq`, `eq q` and
 `eq type`. Each re-reads the bank before printing it: the session drops its cached tables
