@@ -1265,7 +1265,6 @@ device that adjusts the curve by amounts nobody typed, and it remains unproven a
 `Core_GetSupportedFeatures` is answered **per vendor namespace**: the same command id sent to
 `0x0495` and to the Qualcomm core `0x001d` returns two different lists, and this unit answers
 both. `momentum features` asks and decodes. (live)
-
 ```
 vendor 0x0495  0x0101 [00, 09 01, 08 06, 1b 01, 03 02, 10 02, 04 04, 02 01,
                              0a 04, 14 01, 0b 02, 0c 02, 0d 02, 00 05]
@@ -1460,6 +1459,10 @@ ASCII:
 0x1401 [00] → 00, 00, 01, "DESKTOP-RJJ7468"     index 0, priority 0, status 1
 0x1401 [01] → 01, 01, 00, "Mi 11"               index 1, priority 1, status 0
 ```
+
+Nothing in the CLI reads this block: it is `momentum probe --cmd 1400,1409,1401`. It is worth
+wiring into `status`, because it is the only way to see a re-pair from this side — the author
+claimed on 2026-11-01 that `status` showed the host list, and it does not.
 
 Status `1` for the machine that is connected and `0` for the phone that is not, so the byte
 separates connected from merely paired — one observation of each value, so the rest of the
