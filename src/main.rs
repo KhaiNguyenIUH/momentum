@@ -2784,8 +2784,40 @@ async fn gatt(
     };
 
     println!("discovering services on {label} ...");
-    peripheral.discover_services().await?;
-    let services = peripheral.services();
+    // Windows caches the attribute table per device, and the first read of a freshly
+    // connected link can come back empty — an empty table is not evidence that the
+    // device has none. Retry, because the retry is what the platform docs ask for, and
+    // say what the link thinks it is doing if it stays empty: `connected: true` with no
+    // services is a different finding from a link that dropped.
+    let mut services = std::collections::BTreeSet::new();
+    for attempt in 0..3 {
+        peripheral.discover_services().await?;
+        services = peripheral.services();
+        if !services.is_empty() {
+            break;
+        }
+        if attempt < 2 {
+            println!("  no services on attempt {}, retrying ...", attempt + 1);
+            tokio::time::sleep(Duration::from_millis(700)).await;
+        }
+    }
+    if services.is_empty() {
+        let advertised: Vec<_> = peripheral
+            .properties()
+            .await
+            .ok()
+            .flatten()
+            .map(|p| p.services)
+            .unwrap_or_default();
+        println!(
+            "the link reports connected={} and the advertisement carried {} service(s) {:?}, \
+             while the attribute table came back empty three times — read that as Windows \
+             refusing the cache, not as a device with no GATT.",
+            peripheral.is_connected().await.unwrap_or(false),
+            advertised.len(),
+            advertised
+        );
+    }
     println!("{} service(s)", services.len());
 
     let mut subscribable = Vec::new();

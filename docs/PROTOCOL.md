@@ -1839,6 +1839,37 @@ after it timed out of it. So whether the phone's app reaches a GATT control serv
 LE is still unmeasured — what is measured is that Windows cannot enumerate this device's
 GATT table at all, which means LE is not going to be the route from this machine either.
 
+No vendor control service is advertised. Connecting to it from Windows returns
+**zero services**, twice, with `btleplug` asking with `BluetoothCacheMode::Uncached`, so
+this is not the stale-cache case; it failed both while the headset sat in pairing mode and
+after it timed out of it. So whether the phone's app reaches a GATT control service over
+LE is still unmeasured — what is measured is that Windows cannot enumerate this device's
+GATT table at all, which means LE is not going to be the route from this machine either.
+
+### The same wall again, with better instruments
+
+Tried again on 2026-11-01 with the retry that a zero-service answer deserves, because
+"0 services" is exactly what a stale Windows GATT cache looks like and the invented tables
+had just made it worth ruling out. The advertisement was easier than the chapter above
+suggests — seen twice in a fifteen-second window, as **`M5 BT` at `46:1E:05:C7:9D:30`**, an
+address that is not the classic one and rotates, so a name filter works and a remembered
+address does not. It now also carries **manufacturer `0x0ba3`**, which the earlier capture
+did not see.
+
+`connect()` returns Ok. The link does not come up: `is_connected()` is **false**, and three
+discovery attempts in a row return an empty table, twice, identically. So the sharper
+statement of the old finding is not "the attribute table is empty" but **this machine cannot
+open an LE link to the headset at all** — the table is not unreadable, it is unreachable, and
+the difference matters because only the second one is a fact about Windows rather than about
+the device.
+
+That is the whole of what the GATT half of those tables can be answered with from here. The
+advertisement names no `0xFE11` and nothing that could carry GAIA; no LE link can be opened
+to look; and `43333333-…` stays exactly as unproven as it was when it was invented. It also
+closes the second-seat idea from this direction: **there is no LE seat to take.** The one
+that matters — a frame the headset sends that has never been seen by any host but the phone —
+has one instrument left, and it is on the phone.
+
 ## The equaliser, read
 
 `0x1082` is **eight signed bytes, one per band, in tenths of a dB, band 1 first** — no
