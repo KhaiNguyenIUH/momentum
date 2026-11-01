@@ -2569,7 +2569,7 @@ fn personalization(state: Option<&str>, filter: &str) -> Result<(), Boxed> {
 
     if let Ok(frame) = session.request(cmd::GET_PERSONAL_THRESHOLDS, Vec::new(), wait) {
         println!(
-            "thresholds {}   per fader: at level, then 15 dB lower",
+            "thresholds {}   three pairs, each exactly 15.00 wide",
             pairs(&frame.payload, |value| format!("{value:+.2}"))
         );
     } else {
@@ -2606,15 +2606,17 @@ fn personalization(state: Option<&str>, filter: &str) -> Result<(), Boxed> {
         Err(_) => println!("mix        no answer"),
     }
     println!(
-        "This is a volume-dependent equaliser, calibrated twice. The mix — the app's base, \
+        "A volume-dependent equaliser with a two-level calibration: the mix — the app's base, \
          strings and drums, in that order on the screen and assumed in that order in the array \
-         — is set once at a comfortable level and then again 15 dB lower, and each pair above \
-         is one fader at those two listening levels, which is why the gap between them is a \
-         constant rather than a measurement. Three of the six ratios are exactly 1.000, the \
-         shape of an interpolation between two curves, and `x` and `y` are the fine-tune \
-         sliders that work without a recalibration. The vendor's model calls those two bytes \
-         `preset x` and `preset y`, which is why this program first read them as an index into \
-         a table that does not exist."
+         — is set once at a comfortably loud level and then again at the softest level at which \
+         the music is still audible. `x` and `y` are the fine-tune sliders that work without \
+         recalibrating. What is not settled is which array holds which pass: the pairs above are \
+         exactly 15.00 wide, and two levels chosen by ear in a room are not exactly 15.00 apart \
+         three times running, so either the app fixes the second pass 15 dB under the first, or \
+         a pair is one fader's operating span rather than your two settings. The three exact \
+         1.000s point the other way too — a soft pass stored as a ratio to the loud one, three \
+         factors and their own reference — which would also explain why the mix holds three \
+         numbers when six were set."
     );
     for warning in &session.warnings {
         println!("note: {warning}");

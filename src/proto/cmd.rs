@@ -265,13 +265,15 @@ pub const GET_PERSONAL_MODE: u16 = 0x2001;
 /// sends standby or calibrating, and neither does this program. (payload shape from the
 /// vendor's device model, corroborated by a second client's source)
 pub const SET_PERSONAL_MODE: u16 = 0x2000;
-/// Six `REAL32`s, big-endian: **three pairs, one per fader of the mix, each pair the two
-/// listening levels the calibration is run at** — the procedure sets the mix at a comfortable
-/// level and then again 15 dB lower. Measured on a MOMENTUM 5 as `-77.90 / -62.90`,
-/// `-80.61 / -65.61`, `-88.12 / -73.12`: the second member of every pair exactly 15.00 above
-/// the first, in every reading, which is the app's fixed step between the two passes and not
-/// a property of the ear. The pairs have been seen to move while [`GET_PERSONAL_RATIOS`] and
-/// [`GET_PERSONAL_GAINS`] stayed bit-identical, so a repeated pass rewrites only these. (the
+/// Six `REAL32`s, big-endian: three pairs, each exactly 15.00 wide, measured as `-77.90 /
+/// -62.90`, `-80.61 / -65.61`, `-88.12 / -73.12`. **The units are not known** — values in the
+/// −60 to −90 range read like a digital level rather than a sound pressure at the ear — and so
+/// is the pair's meaning unresolved: the calibration asks for a comfortably loud level and then
+/// a barely audible one, which in a real room are tens of decibels apart and not 15.00 three
+/// times, so a pair is either a fixed span per category or the app has fixed its second pass at
+/// 15 dB below the first. The pairs have been seen to move while [`GET_PERSONAL_RATIOS`] and
+/// [`GET_PERSONAL_GAINS`] stayed bit-identical, so some pass can be re-run that rewrites only
+/// these — which is also the strongest hint that a separate hearing measurement exists. (the
 /// procedure is the owner's account of the phone app; the arithmetic is measured here)
 pub const GET_PERSONAL_THRESHOLDS: u16 = 0x2003;
 /// Six `REAL32`s, big-endian, measured as `2.212 / 1.000`, `1.664 / 1.000`, `1.116 / 1.000`.

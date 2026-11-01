@@ -1314,17 +1314,38 @@ ratios        2.212 / 1.000   |     1.664 / 1.000   |     1.116 / 1.000      one
 gains         +3.43   +0.00   +1.37   x 5   y 9      the mix, then the two fine-tune sliders
 ```
 
-**Six thresholds are not six bands, they are three at two listening levels** — which is why the
-second member of each pair sat exactly 15.00 above the first in every reading across two
-firmwares: that is the fixed step the app takes down between the two passes, a property of the
-procedure, not of anybody's hearing. It is also why the pairs were seen to move while the ratios
-and gains stayed bit-identical: **re-running a pass rewrites the thresholds alone**, which was
-the behaviour that made these look like a mysterious live process last night.
+**Six thresholds are not six bands.** That much is certain from the shape, and where the shape
+stops being certain is worth stating carefully, because an earlier draft of this section
+explained the 15.00 as the step the app takes down between the two passes — and the app does not
+take a step of 15 dB. **It asks for a comfortably loud level, and then for the softest level at
+which the music is still audible.** Two settings chosen by ear in a real room are tens of
+decibels apart, and they are not 15.00 apart three times running. So one of two things is true,
+and neither is what this section first said:
 
-The ratios follow the same three-pair structure and carry `1.000` at the same end of every pair
-— an identity on one side of an interpolation and a factor on the other. The three factors are
-unequal and not round (`2.212`, `1.664`, `1.116`), which is what derived quantities look like
-rather than chosen ones.
+- **a pair is one category's operating span** — a floor and a point 15.00 above it, the width
+  fixed by the engine and the position measured — in which case the three different positions
+  (`-77.90`, `-80.61`, `-88.12`) are how audible each category was found to be, which is the
+  hearing-test-shaped part of the picture; or
+- **the app itself fixes the second pass** at 15 dB below the first, whatever the ear chose, and
+  the pair really is the two passes with the instruction being advice rather than a measurement.
+
+The ratios lean the other way, and suggest a third thing this section had wrong: **only three
+faders are stored, and you set six.** The natural place for the second pass is the ratios —
+`2.212`, `1.664`, `1.116` each paired with an exact `1.000`, which is exactly how one set stored
+as a multiple of another looks. On that reading `0x2107` holds the mix at the loud calibration
+and `0x2105` holds the soft mix as three ratios against it, and neither array carries your two
+level choices at all.
+
+The pairs are also the one thing seen to move on their own — the ratios and gains have stayed
+bit-identical across readings where they slid — which means **there is a pass that can be re-run
+without touching the mix.** That is the strongest evidence on this channel that the hearing
+measurement the owner half-remembers exists, and it is the one measurement here that would be
+worth re-taking deliberately, because the current values are the only record of it.
+
+**The units are unknown, and the guess has changed.** `-62` to `-88` was read here as plausible
+hearing thresholds in some sound-pressure unit; they are at least as likely to be a digital
+level below full scale, which would make them a property of the signal path rather than of the
+room or the ear. Nothing on this channel converts either unit into the other.
 
 Two readings in this document are **retracted** by the account.
 
