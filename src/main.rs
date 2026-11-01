@@ -1573,27 +1573,32 @@ fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
     }
 
     match rate {
-        Some(0) => println!("the headset reports no stream: the link is idle."),
+        Some(0) => println!("the headset reports no stream: nothing is playing."),
         Some(hz) => println!(
-            "the stream is {hz} Hz. that is the negotiated link rate, not the file's: \
-             24-bit sources at 44.1, 88.2 and 96 kHz all read 44100 over aptX, so what \
-             Windows does to the samples before encoding is not visible from here."
+            "the stream is {hz} Hz, whichever cable or radio it arrived on. Over aptX from \
+             the inbox Windows driver this reads 44100 however the file is encoded; over \
+             USB-C from the same PC it reads 96000, with the phone app's Codec tab saying \
+             \"USB 96 kHz\" at the same moment."
         ),
         None => println!("no sample-rate frame in {seconds}s of listening."),
     }
     match codec {
-        // Named where the byte has a name — from Sennheiser's own command table — and
-        // printed as it arrived everywhere else.
+        // Named where the byte has a name. `0b` is not a codec and was not one: it appeared
+        // while audio arrived over USB-C, and the app's Codec tab called that same state
+        // "USB 96 kHz". So `0x0800` is the audio *path*, one of whose values involves no
+        // encoding at all — which is also the explanation for a 96 kHz reading that was
+        // attributed to a Bluetooth codec last night, wrongly, by this program's author.
         Some(byte) => {
             let name = match byte {
-                0x02 => "aptX",
-                0x08 => "aptX Adaptive",
-                0xff => "none: nothing is streaming",
+                0x02 => "aptX, from a Bluetooth sink",
+                0x08 => "aptX Adaptive, from a Bluetooth sink",
+                0x0b => "USB-C — the wired path, not a codec",
+                0xff => "nothing is streaming",
                 _ => "unnamed on this unit",
             };
-            println!("codec {byte:#04x}: {name}.");
+            println!("audio path {byte:#04x}: {name}.");
         }
-        None => println!("no codec frame arrived, so there was nothing to report."),
+        None => println!("no audio-path frame arrived, so there was nothing to report."),
     }
     Ok(())
 }

@@ -767,10 +767,24 @@ Codec tab which stated *aptX Adaptive* at the moment this channel read `0x0800 [
 
 | source or setting | `0x0800` | `0x089a` | named by |
 |---|---|---|---|
-| PC, Qobuz, inbox Windows driver | `02` | 44100 | Sennheiser's enumeration |
-| Phone, Hi-Res off | `08` | 48000 | **the app's Codec tab, which said aptX Adaptive** |
-| Phone, Hi-Res on | `0b` | 96000 | nothing yet — the app's Codec tab would name it, and that is the reading worth a restart for |
+| PC, Qobuz, inbox Windows driver, Bluetooth | `02` | 44100 | Sennheiser's enumeration |
+| Phone, Hi-Res off, Bluetooth | `08` | 48000 | the app's Codec tab, which said aptX Adaptive |
+| **PC, 24-bit/96 kHz over USB-C** | `0b` | 96000 | **the app's Codec tab: "USB 96 kHz"** |
 | after a restart, nothing playing | `ff` | 0 | `ff` is no stream, not a codec |
+
+**`0x0800` is therefore not a codec, it is an audio path**, and one of its values — `0b` —
+carries no encoding at all. The MOMENTUM 5 is a USB audio device (`USB\VID_3542&PID_1004`,
+one interface, driver started) and 96 kHz arrives over that cable from an ordinary Windows PC
+while the Bluetooth link sits idle, which is the only way this unit is ever going to hear
+high resolution from this machine: the inbox A2DP driver stops at 16-bit/44.1 and no setting,
+in Qobuz or anywhere else, lifts it. `0x089a` follows the *stream*, not the radio, which is
+why it read 96000 with nothing playing over Bluetooth.
+
+That correction lands on this document's own morning. The `0b` and the 96000 seen at 23:36
+last night were attributed to a high-resolution **Bluetooth** path, and a story was built on
+it; the headset was plugged into this PC at the time, and it was the cable. **The app's Codec
+tab is the cheapest authoritative instrument found all week**, because it names the transport
+that these bytes were being guessed at.
 
 The handset in that middle row is a Mi 11, whose app offers a Lossless 16-bit/44.1 kHz
 priority that it then does not use: the Codec tab says aptX Adaptive, so the switch is a
@@ -1157,10 +1171,12 @@ the selected audio mode, which is exactly the state it should be in while `0x080
 `usereq`. That predicts `0x2001 [03]` the moment the audio mode becomes `personalized`, which
 is one command to test and has not been tested yet.
 
-And the codec did move, to `ff` with the rate at zero, which is not a codec choice but
-**no stream at all**: after a restart nothing is playing, and A2DP does not come back up until
-audio does. So `0b`, the value that meant 96 kHz, is still unnamed, and naming it needs a
-phone actually playing something rather than a headset sitting idle.
+And the codec column of that table was never about the toggle. `0b` at 96000 was the headset
+taking audio **over USB-C from this PC**, discovered hours later when the phone app's Codec tab
+named that state "USB 96 kHz" while the same frames read the same bytes; `ff` at 0 was that
+stream gone after a reboot with nothing playing. Neither end of it was a Bluetooth codec
+choice, so the only column in that experiment that speaks to the priority switch is `0x0406`
+itself — which moved, and still says what this section says it says.
 
 `0x2009`, `PersonalizedSound_Reset`, sits in the same feature and is a write that erases
 someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
