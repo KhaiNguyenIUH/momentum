@@ -1276,9 +1276,9 @@ fn print_bank(eq: &momentum::proto::state::Equaliser) {
          6.21.5. Q is Q12 over 4096, so 0.707 is 1/√2."
     );
     println!(
-        "These are the values the headset holds now. A power-off re-applies its selected \
-         preset over the whole table — measured: eight bands written flat came back as the \
-         owner's own v2 preset, with the phone's Bluetooth switched off, so no app did it."
+        "These are the values the headset holds now, not a promise about the next boot: a \
+         table written flat here came back as the app's own preset after a power-off, with \
+         the phone's Bluetooth switched off. Treat this table as present tense."
     );
 }
 

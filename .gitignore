@@ -4,3 +4,5 @@
 # commit by an indiscriminate `git add -A`. Nothing at the root is a .txt file.
 /*.txt
 /*.tx
+
+/.cache/

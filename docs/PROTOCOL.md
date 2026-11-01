@@ -1220,10 +1220,10 @@ itself — which moved, and still says what this section says it says.
 someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
 only reason it is named here is that a reader should know the id exists before they find it.
 
-## The headset restores the selected preset at boot, and nothing you wrote survives it
+## A curve written here did not survive the boot, and the cause is still open
 
-A curve written by this program, a power-off at the headset, and the phone's Bluetooth turned
-off first, so nothing on the phone could have written anything:
+A power-off, a written-flat table, and the phone's Bluetooth switched off first, so nothing on
+the phone could have written anything:
 
 ```
 written here, confirmed by read-back   00 00 00 00 00 00 00 00     eight bands at +0.0
@@ -1232,17 +1232,16 @@ the user's own preset "v2", read off   −3.0 +2.0 −1.0 0 0 +2.0 +1.0 +1.0
 the app's screen, by the owner
 ```
 
-**All eight bands match `v2`, to the tenth.** The MOMENTUM 5 stores an EQ *preset selection*
-of its own and re-applies that preset's curve when it boots, over whatever the table held a
-minute before. No phone, no app, no third client, no hidden writer: the device undoing this
-program's work using its own memory, which is the most boring possible explanation and the
-only one the experiment left standing.
+**All eight bands match `v2`, to the tenth.** Whatever the mechanism — and the mechanism is not
+established, see below — **a gain table written by this program did not survive a power-off, and
+the table that came back was the one the app had written earlier.** No phone, no app, no third
+client on the line at the moment of the reboot.
 
 It also explains the app's behaviour on the way in. Immediately after the flat write the app's
 Graphic EQ screen said **Neutral**, which it could only have done by reading the table and
-matching the numbers to a preset — the app has no private copy, it recognises a curve by its
-values. So there is one table on the headset, one selection stored with it, and the presets are
-descriptions rather than storage.
+matching the numbers to a preset — the app has no private copy of the *active* curve, it
+recognises a curve by its values. So there is one table on the headset, and the presets are
+descriptions kept on the phone rather than storage in the device.
 
 Two things follow, one practical and one still open.
 
@@ -1252,18 +1251,31 @@ re-applies the selected preset over them. Anyone using this as a daily driver sh
 `momentum eq show` to be true *now* and false after a reboot, and should treat a surprise in
 that table as "the preset was re-applied" before suspecting anything more exotic.
 
-**Open: which id holds the selection, and what does it have to do with `0x1013`.** The
-selection survives power-off, so it is in non-volatile storage and reachable by some command;
-`0x1013` is the only thing in the equaliser feature that still answers `[00, 00]` while all this
-has been happening, and the seven declared features nobody has opened — `02`, `03`, `09`, `0a`,
-`0b`, `0c`, `0d` — are where a preset table would most plausibly live. Finding the selection
-would turn `momentum eq flat` from something the next boot undoes into something that could be
-made to stick, by writing the selection instead of the curve.
+**Open: how does a gain write get committed at all.** The obvious answer — that the headset
+remembers which preset was selected — is dead on the wire, and the owner found it before I did.
+`0x1100` is `bands, min, max, selectablePreset, userPresets`, and this unit answers
+`08 c4 3c 00 00`: **no selectable preset, no user preset slots.** The headset has no preset to
+restore, and `Rock, Pop, Jazz, Neutral` and the owner's `v2` are tables inside the app, which
+applies one by writing the changed bands — the same `0x1001` this program writes, down to
+xndbogdan's note that their `send()` writes the sub-mode and then *only the bands that
+changed*. So the app and this tool send the same bytes, and the app's curve comes back after a
+reboot while ours did not.
 
-**And the fractions are still unexplained.** The boot restore produced clean integers matching
-`v2`, so whatever put `+1.1` and `−0.1` into that table last night was doing it somewhere else,
-at run time — the bass-boost sub-mode at `0x1009` remains the only known mechanism on this
-device that adjusts the curve by amounts nobody typed, and it remains unproven as the source.
+That is the sharpest form the question has had, and it is unresolved. Either the device treats
+identical commands differently depending on who sent them, which is not a thing GAIA does, or
+something else writes after the bands — in which case the only unnamed member of that block,
+`0x1012`/`0x1013`, is the candidate, and it is not written from here because its payload has
+never been seen and inventing one is how the last three wrong chapters of this document were
+written. The instrument that would settle it without guessing is the phone's Bluetooth HCI
+snoop log: it records exactly what the app sends after the last gain write, and there is
+nothing else on this bench that can.
+
+**The fractions were mine, not the device's.** This section used to argue that `+1.1` and
+`−0.1` could not have come from a slider because sliders move in whole decibels, and used that
+to blame the bass-boost sub-mode. The vendor's own preset tables refute it — Jazz is
+`−3.2, 0, 2.2, 2.2, 0`, Dance is `3.5, 2, −1.5, 1.5, 3` — **the app writes tenths of a decibel
+as a matter of course.** A fractional band is an app preset, not arithmetic, and one more
+mechanism I reached for was a story rather than a measurement.
 
 ## The firmware states its own feature list
 

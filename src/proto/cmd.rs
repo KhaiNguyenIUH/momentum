@@ -158,6 +158,14 @@ pub const PUSH_TRANSPARENCY_ON: u16 = 0x1885;
 /// except the two gains, which are signed tenths of a dB. Measured on MOMENTUM 5:
 /// `08 c4 3c 00 00` — **eight bands, −6.0 dB to +6.0 dB**. This is where a client
 /// learns the limits instead of assuming them. (live)
+///
+/// The last two bytes are worth more than they look: **this unit answers `0` and `0`, so
+/// the headset has no preset of its own to select and no user preset slots at all.** The
+/// `Rock / Pop / Jazz / Neutral` list and the owner's own stored curves live in the app,
+/// which applies one by writing the changed bands — `UserEQ_SetSliderGain`, the same command
+/// this program sends. So there is nothing here to select, and an `eq preset` command would
+/// be a fiction: the only thing a preset *is*, on this device, is a set of gains somebody
+/// wrote. (field layout from the vendor's device model; the two zeros measured)
 pub const GET_EQ_CONFIG: u16 = 0x1000;
 /// Write one band: `[band, gain]`, gain signed in tenths of a dB. Answers an empty
 /// ack and then pushes the whole table. (live: `[00, 3c]` → `0x1101 []`, then
