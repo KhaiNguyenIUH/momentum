@@ -68,7 +68,7 @@ impl Charging {
 /// established against the app's own slider labels. The other three tables describe a
 /// **bank of filters**, not the seven sliders: a centre frequency, a Q and a filter type
 /// per band, all three writable. They are named for what they are, which is recent — an
-/// earlier version of this struct called the Q `band_value` and the filter type `limit`,
+/// earlier version of this struct called the Q `q` and the filter type `limit`,
 /// and the document that recorded ±14 dB as a range was reading a filter type as a
 /// decibel.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -270,10 +270,10 @@ impl Event {
             c if c == cmd::PUSH_EQ_FREQUENCY || c == cmd::reply_to(cmd::GET_EQ_FREQUENCY) => {
                 Event::EqRow100b(rows(&frame.payload, 2))
             }
-            c if c == cmd::PUSH_EQ_BAND_VALUE || c == cmd::reply_to(cmd::GET_EQ_BAND_VALUE) => {
+            c if c == cmd::PUSH_EQ_Q || c == cmd::reply_to(cmd::GET_EQ_Q) => {
                 Event::EqBandValues(rows(&frame.payload, 2))
             }
-            c if c == cmd::PUSH_EQ_LIMIT || c == cmd::reply_to(cmd::GET_EQ_LIMIT) => {
+            c if c == cmd::PUSH_EQ_FILTER_TYPE || c == cmd::reply_to(cmd::GET_EQ_FILTER_TYPE) => {
                 Event::EqLimits(rows(&frame.payload, 1))
             }
             c if c == cmd::PUSH_EQ_GAIN_WIDE || c == cmd::reply_to(cmd::GET_EQ_GAIN_WIDE) => {
@@ -737,7 +737,7 @@ mod tests {
         state.apply(&event);
         state.apply(&Event::EqGains(vec![0; 8]));
         state.apply(&Event::decode(&frame(
-            cmd::PUSH_EQ_LIMIT,
+            cmd::PUSH_EQ_FILTER_TYPE,
             &[0x00, 0x0e, 0x01, 0x0e],
         )));
         assert_eq!(state.eq.bands(), 8);

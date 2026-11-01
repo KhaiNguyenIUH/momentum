@@ -237,7 +237,13 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
-    /// Set the transparent-hearing level, 0..=100. 0 turns it off.
+    /// Set the transparent-hearing level, 0..=100.
+    ///
+    /// Its zero is not off. The vendor's own decode of this byte is **0 = maximum noise
+    /// cancelling, 50 = neutral, 100 = maximum transparency**, so `transparency 0` asks for
+    /// the loudest cancelling the device has, not silence. Two things mute this control
+    /// rather than moving it: while adaptive noise control is on the headset ignores the
+    /// value, and with the noise-control master switch off, changing it is inaudible.
     Transparency {
         level: u8,
         /// Select by service name or peer address; empty means any.
@@ -1456,9 +1462,13 @@ fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
 #[cfg(windows)]
 fn features(filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
-    for (vendor, label) in [
-        (momentum::proto::frame::VENDOR_QUALCOMM, "vendor 0x0495"),
-        (0x001d, "vendor 0x001d, Qualcomm core"),
+    for (vendor, label, sennheiser) in [
+        (
+            momentum::proto::frame::VENDOR_QUALCOMM,
+            "vendor 0x0495",
+            true,
+        ),
+        (0x001d, "vendor 0x001d, Qualcomm core", false),
     ] {
         match session.request_vendor(
             vendor,
@@ -1474,10 +1484,12 @@ fn features(filter: &str) -> Result<(), Boxed> {
                     .map_or((false, &[][..]), |(first, rest)| (*first != 0, rest));
                 for pair in rest.chunks(2).filter(|pair| pair.len() == 2) {
                     println!(
-                        "  feature 0x{:02x} version {:>2}   {}",
+                        "  feature {:>2} (0x{:02x}) version {:>2}  commands 0x{:02x}xx  {}",
+                        pair[0],
                         pair[0],
                         pair[1],
-                        feature_note(pair[0])
+                        u16::from(pair[0]) * 2,
+                        feature_note(pair[0], sennheiser)
                     );
                 }
                 if more {
@@ -1493,15 +1505,43 @@ fn features(filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
-/// What has been seen of a feature from this program, or a plain admission that nothing has.
-fn feature_note(feature: u8) -> &'static str {
+/// What a declared feature covers.
+///
+/// **The ids in this list are the vendor's feature numbers, not command high bytes.** A
+/// feature's commands begin at `feature × 2` in the high byte, so active noise control is
+/// feature `13` = `0x0d` and its commands are `0x1a00` upwards, and sound personalization is
+/// `16` = `0x10` at `0x2000`. Reading the list as high bytes instead makes both of them look
+/// absent from a device that answers them fluently, which is a mistake this program made and
+/// recorded on 2026-11-01. (numbering from the vendor's device model, cross-checked against
+/// commands this unit answers)
+fn feature_note(feature: u8, sennheiser: bool) -> &'static str {
+    if !sennheiser {
+        // Qualcomm's core numbering is its own, and identical numbers mean unrelated things:
+        // the core's `0d` is not Sennheiser's `0d`, and printing the noise-control note beside
+        // it would be the exact error this command exists to avoid.
+        return match feature {
+            0x00 => "core: version, supported features, transport info",
+            0x03 => "voice UI, the selection for a voice assistant",
+            0x04 => "debug: panic-log retrieval `0x0803`, `0x0804`",
+            0x06 => "device firmware update — nothing here sends any part of it",
+            0x0c => "statistics: usage counters `0x1800` to `0x1802`",
+            _ => "a Qualcomm core feature, not examined by this program",
+        };
+    }
     match feature {
-        0x00 => "identity: firmware `0x0005`, model `0x0006`",
-        0x04 => "unit state: wear detection `0x0401`, physical state `0x0402`, push `0x0482`",
-        0x08 => "audio: codec `0x0800`, audio mode `0x0804` and its push, stream rate `0x089a`",
-        0x10 => "equaliser: `0x1000` to `0x1014`, and the wide store nobody reads",
-        0x14 => "answered only as pushes `0x1491` and `0x1494`, payloads that look monotonic",
-        _ => "not used by anything in this program",
+        0x00 => "core: identity, and the factory reset nothing here should send",
+        0x01 => "upgrade: firmware over the air",
+        0x02 => "device: wear detection, physical state, and the Hi-Res switch",
+        0x03 => "battery and power: level, charging, and the auto power-off timer",
+        0x04 => "generic audio: codec, audio mode, sidetone, prompts, and the stream rate",
+        0x08 => "user equaliser: the eight gains and the tables of metadata around them",
+        0x09 => "versions: the firmware the app gates on, and the model id",
+        0x0a => "device management: the paired-host list, connect, disconnect, delete",
+        0x0b => "mmi: the touch map and the touch lock",
+        0x0c => "transparent hearing: its own mode, status, and push",
+        0x0d => "active noise control: the mode pairs, the level, and the master switch",
+        0x10 => "sound personalization: mode, thresholds, ratios, and the hearing-test gains",
+        _ => "not in the vendor's model of the M4, and not read by anything in this program",
     }
 }
 
@@ -1643,18 +1683,29 @@ fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
         None => println!("no sample-rate frame in {seconds}s of listening."),
     }
     match codec {
-        // Named where the byte has a name. `0b` is not a codec and was not one: it appeared
-        // while audio arrived over USB-C, and the app's Codec tab called that same state
-        // "USB 96 kHz". So `0x0800` is the audio *path*, one of whose values involves no
-        // encoding at all — which is also the explanation for a 96 kHz reading that was
-        // attributed to a Bluetooth codec last night, wrongly, by this program's author.
+        // The names below 0x0b are the vendor's, from the device model behind the phone app;
+        // only `02`, `08`, `0b` and `ff` have actually been seen on this unit. `0b` is past
+        // the end of their list and is not a codec at all: it appeared while audio arrived
+        // over USB-C, and the app's Codec tab called that same state "USB 96 kHz". So
+        // `0x0800` reports the audio *path*, one of whose values involves no encoding —
+        // which is also the explanation for a 96 kHz reading this program's author
+        // attributed to a Bluetooth codec last night, wrongly.
         Some(byte) => {
             let name = match byte {
-                0x02 => "aptX, from a Bluetooth sink",
-                0x08 => "aptX Adaptive, from a Bluetooth sink",
-                0x0b => "USB-C — the wired path, not a codec",
+                0x00 => "SBC, the Bluetooth baseline",
+                0x01 => "AAC",
+                0x02 => "aptX",
+                0x03 => "aptX Low Latency",
+                0x04 => "MP3",
+                0x05 => "aptX HD",
+                0x06 => "Faststream, Qualcomm's low-latency path",
+                0x07 => "LHDC",
+                0x08 => "aptX Adaptive",
+                0x09 => "aptX Lossless — a mode of Adaptive, and never seen here",
+                0x0a => "LC3, the Low Energy Audio codec",
+                0x0b => "the wired path — USB-C, measured here, no codec involved",
                 0xff => "nothing is streaming",
-                _ => "unnamed on this unit",
+                _ => "outside the vendor's list, and unmeasured on this unit",
             };
             println!("audio path {byte:#04x}: {name}.");
         }
@@ -2051,6 +2102,37 @@ struct ProbeRequest<'a> {
     register: Option<&'a str>,
 }
 
+/// Commands `momentum probe --cmd` refuses to put on the wire.
+///
+/// `probe` sends whatever it is handed, which is the right design for a tool whose job is to
+/// find out what a device answers — until the id handed to it is a factory reset. These four
+/// are in the vendor's own "dangerous, do not touch" list, they all destroy state this
+/// program cannot rebuild, and no measurement needs them: everything worth knowing about this
+/// headset has come from reading it.
+fn destructive(id: u16) -> Option<&'static str> {
+    match id {
+        0x0040 => Some("it is the factory reset"),
+        0x0200 | 0x0201 => Some("it belongs to the firmware upgrade path"),
+        0x1405 => Some("it deletes one host from the pairing list"),
+        0x1406 => Some("it deletes the entire pairing list"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn probe_refuses_the_four_commands_that_cannot_be_undone() {
+    for id in [0x0040u16, 0x0200, 0x0201, 0x1405, 0x1406] {
+        assert!(destructive(id).is_some(), "{id:#06x} must be refused");
+    }
+    for id in [0x0041u16, 0x1400, 0x1404, 0x1a05, 0x2001] {
+        assert!(
+            destructive(id).is_none(),
+            "{id:#06x} is a read, not a wreck"
+        );
+    }
+}
+
 #[cfg(windows)]
 fn probe(request: &ProbeRequest<'_>) -> Result<(), Boxed> {
     use momentum::cmd::feature;
@@ -2065,6 +2147,21 @@ fn probe(request: &ProbeRequest<'_>) -> Result<(), Boxed> {
         features,
         register,
     } = *request;
+
+    // Refused before the link is opened rather than after: there is one control connection at
+    // a time on this device, so a refusal that costs the owner their app's session, and then
+    // risks the reconnect wedge, is a badly designed refusal.
+    if let Some(text) = cmd {
+        for id in parse_u16_spec(text)? {
+            if let Some(reason) = destructive(id) {
+                return Err(format!(
+                    "`0x{id:04x}` is not sent from this program: {reason}. It cannot be \
+                     undone from here, and nothing in this program needs it."
+                )
+                .into());
+            }
+        }
+    }
 
     let mut link = connect_first(filter, false, channel)?.into_link();
 

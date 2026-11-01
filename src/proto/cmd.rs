@@ -205,10 +205,10 @@ pub const GET_EQ_FREQUENCY: u16 = 0x100b;
 /// A per-band u16 whose unit is unidentified — `0x0800` on band 0 and `0x0b5c`
 /// on the others here. Named for its id because naming it anything else would
 /// be a guess.
-pub const GET_EQ_BAND_VALUE: u16 = 0x100d;
+pub const GET_EQ_Q: u16 = 0x100d;
 /// Per-band limit, `14` on every band of this unit, unit unknown. Read-only:
 /// the even neighbour `0x100e` refuses the write.
-pub const GET_EQ_LIMIT: u16 = 0x100f;
+pub const GET_EQ_FILTER_TYPE: u16 = 0x100f;
 /// The user gain of one band as a u16, where the eight-byte form of
 /// [`GET_EQ_GAINS`] reports the same thing in one frame.
 ///
@@ -233,15 +233,27 @@ pub const GET_EQ_STATE: u16 = 0x1013;
 
 /// Pushes of each table above, sent together when [`feature::EQ`] is registered.
 pub const PUSH_EQ_GAINS: u16 = 0x1082;
-/// See [`PUSH_EQ_GAINS`].
+/// See [`PUSH_EQ_GAINS`]: `(band, UINT16 Hz)` per row, three bytes a band. The vendor's M4
+/// traces carry `90, 325, 1500, 6500, 6500` and a MOMENTUM 5 answers `90, 325, 1500` for its
+/// first three bands and then five more of its own — **the same tables, the same decode,
+/// confirmed on two products that never saw this program.**
 pub const PUSH_EQ_FREQUENCY: u16 = 0x108b;
-/// See [`PUSH_EQ_GAINS`].
-pub const PUSH_EQ_BAND_VALUE: u16 = 0x108d;
-/// See [`PUSH_EQ_GAINS`].
-pub const PUSH_EQ_LIMIT: u16 = 0x108f;
-/// See [`PUSH_EQ_GAINS`].
+/// See [`PUSH_EQ_GAINS`]: `(band, UINT16 Q)` per row, **Q12 over 4096**. The vendor's M4
+/// traces carry `0x0800` and `0x0b5c` — 0.500 and 0.710 — and those are exactly the two
+/// numbers a MOMENTUM 5 reports. It was called `band_value` here until the vendor's model
+/// said otherwise. (name from the vendor's device model, values measured on both units)
+pub const PUSH_EQ_Q: u16 = 0x108d;
+/// See [`PUSH_EQ_GAINS`]: `(band, UINT8 filter type)` per row. Every band of a MOMENTUM 5
+/// answers `14` and so does every band of the M4 in the vendor's traces. **It is a filter
+/// type, not a limit** — which is what this id was first called here, on the strength of its
+/// value alone and against the fact that a limit of 14 would disagree with the ±6.0 dB the
+/// device states for itself at [`GET_EQ_CONFIG`].
+pub const PUSH_EQ_FILTER_TYPE: u16 = 0x108f;
+/// See [`PUSH_EQ_GAINS`]. The vendor's model has this one too and calls it "probably the DSP
+/// gain", unverified; on a MOMENTUM 5 it has never been seen at all.
 pub const PUSH_EQ_GAIN_WIDE: u16 = 0x1091;
-/// See [`PUSH_EQ_GAINS`].
+/// See [`PUSH_EQ_GAINS`]. `[00, 00]` on a MOMENTUM 5 and `[00, 00]` in the vendor's M4
+/// traces, unknown on both — the only member of this block that neither product explains.
 pub const PUSH_EQ_STATE: u16 = 0x1093;
 
 /// The sample rate of the live audio link, four bytes big-endian.
@@ -348,10 +360,10 @@ pub fn name(cmd: u16) -> &'static str {
         PUSH_EQ_GAINS => "eq_gains_push",
         GET_EQ_FREQUENCY => "get_eq_frequency",
         PUSH_EQ_FREQUENCY => "eq_frequency_push",
-        GET_EQ_BAND_VALUE => "get_eq_band_value",
-        PUSH_EQ_BAND_VALUE => "eq_band_value_push",
-        GET_EQ_LIMIT => "get_eq_limit",
-        PUSH_EQ_LIMIT => "eq_limit_push",
+        GET_EQ_Q => "GET_EQ_Q",
+        PUSH_EQ_Q => "eq_q_push",
+        GET_EQ_FILTER_TYPE => "GET_EQ_FILTER_TYPE",
+        PUSH_EQ_FILTER_TYPE => "eq_filter_type_push",
         GET_EQ_GAIN_WIDE => "get_eq_gain_wide",
         PUSH_EQ_GAIN_WIDE => "eq_gain_wide_push",
         GET_EQ_STATE => "get_eq_state",
@@ -415,8 +427,8 @@ pub fn name(cmd: u16) -> &'static str {
         0x1607 => "get_auto_lock_mode",
         0x1707 => "auto_lock_mode_reply",
         0x110b => "eq_frequency_reply",
-        0x110d => "eq_band_value_reply",
-        0x110f => "eq_limit_reply",
+        0x110d => "eq_q_reply",
+        0x110f => "eq_filter_type_reply",
         0x1110 => "eq_gain_wide_ack",
         0x1111 => "eq_gain_wide_reply",
         0x1113 => "eq_state_reply",
@@ -454,6 +466,13 @@ pub fn name(cmd: u16) -> &'static str {
         0x2105 => "personal_ratio_reply",
         0x2107 => "personal_gains_reply",
         0x2081 => "personal_mode_push",
+        // Given names by the vendor's model that this program had left as hex. The first is
+        // the touch-lock push — its getter `0x1607` was read here and answered `[00]` — the
+        // second is a low-latency mode the app hides, whose getter `0x0818` answers `[00]`
+        // on this unit, and the third is the per-host connection status of the paired list.
+        0x1687 => "auto_lock_push",
+        0x0898 => "low_latency_push",
+        0x1484 => "connection_status_push",
         _ => "unknown",
     }
 }

@@ -1296,21 +1296,52 @@ vendor 0x001d  0x0100 [03, 01]     Core_GetVersion: protocol 3, transport 1
 That last line is the document's assumption about itself, confirmed by the device: **GAIA
 version 3 over RFCOMM**, stated rather than inferred from a service UUID.
 
-Two things the list settles and one it opens.
+Two things the list settles, and one mistake it caught — mine, written this morning.
 
-It explains every registration refusal above: features `0x1c` to `0x2f` are not in it, which
-is why they answered GAIA code `05`. It gives a target for the features this program does not
-yet use — `02`, `03`, `09`, `0a`, `0b`, `0c`, `0d` — seven namespaces the firmware admits to
-and nothing here has opened. And it opens this: **`0x1a`, active noise control, and `0x20`,
-sound personalization, are both absent from the declared list and both work.** `0x1a01`
-returns the ANC mode table and `0x2001` returns the personalization mode; neither is declared.
+It explains every registration refusal above: numbers past `0x1b` are not in it, which is why
+registering them answered GAIA code `05`.
 
-So the list is a discovery contract, not a capability map — it tells you what a client is
-expected to enumerate, and Sennheiser keeps at least two of its headline features off that
-path. A program that trusted the list would conclude this headset has no noise control, which
-is the kind of wrong conclusion that only comes from reading a manifest instead of sending a
-command. The pairing order, `(feature, version)`, is Qualcomm's documented shape; the raw
-bytes are printed by `momentum features` precisely so that reading can be checked by eye.
+And the mistake: an earlier version of these paragraphs stated that **`0x1a` (active noise
+control) and `0x20` (sound personalization) "are both absent from the declared list and both
+work"**, concluded that the manifest was not a capability map, and went on to list "seven
+declared features nobody has opened" — `02`, `03`, `09`, `0a`, `0b`, `0c`, `0d` — as unexplored
+namespaces. Both readings were wrong, and wrong in the same way: **the ids in this list are the
+vendor's feature numbers, not command high bytes.** A feature's commands begin at `feature × 2`
+in the high byte. Decoded that way the list is not only consistent with this unit, it is
+complete:
+
+| declared | commands | the vendor's name | seen on this unit as |
+| --- | --- | --- | --- |
+| `00` | `0x00xx` | core | serial `0x0003`, `Core_GetVersion` |
+| `02` | `0x04xx` | device | wear `0x0401`, physical state `0x0402`, Hi-Res `0x0406` |
+| `03` | `0x06xx` | battery / power | `0x0602`, `0x0603`, auto power-off `0x0601` |
+| `04` | `0x08xx` | genericAudio | codec `0x0800`, audio mode `0x0804`, stream rate `0x089a` |
+| `08` | `0x10xx` | userEQ | the whole equaliser, `0x1000` to `0x1093` |
+| `09` | `0x12xx` | versions | `0x1200`, `0x1202`, model id `0x1206` |
+| `0a` = 10 | `0x14xx` | deviceManagement | the paired-host list `0x1400`, `0x1401`, `0x1407` |
+| `0b` = 11 | `0x16xx` | mmi | touch lock `0x1607`, push `0x1687` |
+| `0c` = 12 | `0x18xx` | transparentHearing | `0x1805` and its push `0x1885` |
+| `0d` = 13 | `0x1axx` | **ANC** | mode pairs `0x1a01`, level `0x1a03`, master switch `0x1a05` |
+| `10` = 16 | `0x20xx` | **personalizedSound** | `0x2001`, `0x2003`, `0x2005`, `0x2007`, push `0x2081` |
+| `14` = 20 | `0x28xx` | not in the M4 model | never seen |
+| `1b` = 27 | `0x36xx` | not in the M4 model | **the `0x3681`, `0x3683` and `0x3685` pushes** |
+
+So the two headline features were never missing from the manifest: `13` and `16` were sitting in
+it as `0x0d` and `0x10`, and the sentence "a program that trusted the list would conclude this
+headset has no noise control" describes the error I made reading it, not a property of the
+device. The seven unexplored namespaces were `device`, `battery`, `versions`, `device
+management`, `mmi`, `transparent hearing` and `ANC` — every one of them a block this program
+reads daily. That is a sharper lesson than the one it replaced: the manifest was accurate and
+my decoding of it was not, which is the failure mode this document keeps hitting.
+
+The arithmetic also retires two orphans. `0x1491` and `0x1494` are `0x14xx`, so they belong to
+feature `10`, **device management** — the paired-host block — and not to whatever unnamed thing
+they were filed under. And the `0x36xx` pushes that have arrived since the first session are
+feature `27`, 27 × 2 = 54 = `0x36`: a declared feature that the M4's model does not define,
+which makes it the most interesting thing on this unit.
+
+What the list still cannot tell you is which properties *inside* a feature answer. That remains
+a matter of sending commands.
 
 ### There is no parametric equaliser on this unit
 
@@ -1436,6 +1467,56 @@ not a switch.
 **The mechanism worth stealing whole**: read `0x1201` first and choose command shapes from
 the firmware version, before choosing payloads. Nearly every misreading in this document
 came from assuming one firmware's meaning for all firmwares.
+
+**Where their map is right in a way that matters.** They name `0x108b`, `0x108d` and `0x108f`
+as band frequencies, Q factors and filter types, and their MOMENTUM 4 traces decode to
+`90, 325, 1500, 6500, 6500` Hz, Q12 values `0x0800` and `0x0b5c` — **0.500 and 0.710** — and
+filter type `0x0e` on every band. A MOMENTUM 5 answers the same first three frequencies, the
+same two Q numbers, and `14` on all eight bands. Two products, two independent captures, one
+decode, and this program involved in neither of them: that is what makes the frequency, Q and
+type columns of `momentum eq show` trustworthy as *metadata*, even though they remain inaudible.
+Their codec list fills the gaps in ours the same way — `0` SBC, `1` AAC, `2` aptX, `3` aptX-LL,
+`4` MP3, `5` aptX-HD, `6` Faststream, `7` LHDC, `8` aptX Adaptive, `9` aptX Lossless, `10` LC3,
+`ff` none — and **stops at `10`, which is a quiet confirmation that `0b` is not a codec**: the
+vendor's own enumeration has no eleventh entry, and the eleventh value is what this unit reports
+while streaming over the cable.
+
+They also settle two things this document had open. `0x100d` and `0x100f` are the getters of
+those two tables, which is why they are `Q` and `filter type` and not, as this program first
+called them, `band value` and `limit` — a name guessed from a value of 14 that agreed with
+nothing else, since the device states its own limit as ±6.0 dB two commands away. And `0x1687`
+is the touch-lock push, `0x0898` the low-latency push, both of which this program had logged and
+never named. What they do **not** explain is `0x1013` with its push `0x1093`: `[00, 00]` on the
+M4 and `[00, 00]` on the M5, unknown on both, the one member of the equaliser block that neither
+product nor either capture accounts for.
+
+**Two things their document says that changes how a control behaves, not just what it is
+called.** While adaptive noise control is on, **the headset ignores the transparency level
+entirely**; and with the noise-control master switch at `0`, moving that level is inaudible in
+either direction. Both were observed by them on an M4 and both are consistent with the mode
+switch that this program found dead on first contact. Their mapping of the level itself is the
+same one this document has been circling: **0 is maximum noise cancelling, 50 neutral, 100
+maximum transparency** — so `momentum transparency 0` is a demand for the strongest cancelling
+the unit has, and its help text now says so instead of promising "off".
+
+### The commands that must not be sent, and are not
+
+Their document ends its command reference with a do-not-touch list. `momentum probe --cmd` will
+send anything it is handed — that is its purpose — so these four are now refused in code, with
+the reason printed, because none of them can be undone from here and no measurement has ever
+needed them:
+
+| id | what it does |
+| --- | --- |
+| `0x0040` | **factory reset**, which also clears the bonding |
+| `0x0200`, `0x0201` | the firmware upgrade path; a half-sent image is a brick |
+| `0x1405` | deletes one host from the pairing list |
+| `0x1406` | **deletes the entire pairing list**, on a headset holding four hosts |
+
+Also in their list and out of scope here rather than refused: the Qualcomm DFU block,
+`Core_DataTransfer`, the panic-log retrieval, the statistics feature and the voice-UI selection.
+A `0x1405` against the wrong index is the one command on this channel that can lock the owner
+out of their own phone, which is why the refusal is written down rather than left to care.
 
 ## The settings block, the paired-device list, and why the headset keeps going to sleep
 
