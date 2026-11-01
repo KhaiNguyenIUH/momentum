@@ -115,6 +115,12 @@ pushes, so a long-lived `watch` loop and a one-shot `status` share the same code
 
 ## Notes on real hardware
 
+- **Nothing you write to the equaliser outlives a power-off.** Eight bands were written flat and
+  confirmed by read-back; the phone's Bluetooth was switched off so no app could be blamed; the
+  headset was powered off and on; and its own `v2` preset came back, all eight bands, to the
+  tenth of a decibel. The device stores a *preset selection* and re-applies that curve at boot,
+  over whatever the table held. So `momentum eq show` is present tense, and a surprising value
+  there is the preset coming back before it is anything more exotic.
 - **The equaliser writes, after a week of the wrong payload shape.** `momentum eq gain 3 2.5`
   sends `0x1001 [band, gain]` — one band, gain signed in tenths of a decibel — and prints
   what the headset reports back, which is the number that is stored. The id and its two-byte

@@ -1275,6 +1275,11 @@ fn print_bank(eq: &momentum::proto::state::Equaliser) {
          and were measured not to change what you hear — on firmware 6.21.1 and again on \
          6.21.5. Q is Q12 over 4096, so 0.707 is 1/√2."
     );
+    println!(
+        "These are the values the headset holds now. A power-off re-applies its selected \
+         preset over the whole table — measured: eight bands written flat came back as the \
+         owner's own v2 preset, with the phone's Bluetooth switched off, so no app did it."
+    );
 }
 
 /// What moved between two readings of the equaliser, one line per parameter that differs.
