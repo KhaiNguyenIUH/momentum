@@ -660,6 +660,54 @@ FF 04 00 00 | 04 95 01 07                     its ack
 - No frame this device sends or accepts has ever contained a checksum, and the parser
   resynchronises on `FF` without one.
 
+### A second invented table, settled by an id census rather than by the wire
+
+On 2026-11-01 a screenshot arrived, evidently from a chat assistant, offering a "16-byte command
+structure" for *High-Q Parametric Overrides* written over a BLE characteristic, on the claim that
+"the Sound Personalization engine unlocks 5 core parametric nodes that hidden algorithms usually
+compute". It did not need to be sent to the device to be answered. Every GAIA command id in
+`user-eq-1.json`, `user-eq-2.json` and `sound-personalization-1.json` — the vendor's own tables,
+extracted from the shipped app — is:
+
+```
+0x0000  0x0007  0x0107
+0x1000 … 0x1009        with replies 0x1100 … 0x1109
+0x2000 … 0x2007, 0x2009  with replies 0x2100 … 0x2109
+```
+
+There is no `0x44`. There is no node index, no override command, and the words *checksum* and
+*verification* appear in none of the three files. The equaliser and personalization together have
+twenty-eight ids between them and every one of them is already in this document.
+
+The fiction is woven from real threads, which is why it is worth untangling rather than
+laughing at. "Five nodes with frequency, gain and Q" is `user-eq-1`: a master gain and four
+high shelves, each with a type, a frequency, a gain and a Q — a genuine five-node parametric
+shape from the first-generation firmware, which this unit refuses (`0x1003` → `05`) and which
+belongs to the equaliser feature, nowhere near personalization. The units were invented on the
+way past:
+
+| the claim | what is actually true on this family |
+| --- | --- |
+| centre frequency as unsigned Hz | 1/3 Hz units (×3) in Gen1; a device-pushed index table on this unit, and moving a band is **inaudible** |
+| signed gain, ±12 dB | 1/60 dB (×60) in Gen1; the device states **±6.0 dB** for its own sliders at `0x1100` |
+| Q multiplied by 100 | **Q12 over 4096**, measured: `0x0800` = 0.500, `0x0b5c` = 0.710 |
+| five parametric nodes | **eight** bands, `0x1100 [08, …]` |
+| "unlocks parametric" | audio mode `4`, `parametricEq`, is accepted, is sat in, and is inaudible — twice |
+| "the standard app uses a 0–100 scale" | that is the *transparency level*. Two domains, one paragraph |
+| a 16-byte frame with "dynamic verification bytes, varies" | GAIA v3 is `FF 03 …` with vendor and command big-endian, and **no frame this device sends or accepts has ever carried a checksum** |
+
+**"Preset x" and "preset y" are the fingerprint.** Those are the names of the last two bytes of
+`PersonalizedSound_Gains` — defined by the model, interpreted by nobody, never mentioned by any
+client. Whatever produced that screenshot had absorbed the vocabulary and not the protocol.
+
+What the census cannot settle is the BLE half. Windows exposes no GATT table for this device, so
+`0000fe11-…` and its two `43333333-…` characteristics can be neither confirmed nor denied from
+this machine; nRF Connect on a phone would do it in two minutes. It would not rescue the
+payload — a real transport carrying an invented command is still an invented command — and the
+payload will not be sent from here. The rule has not moved all week: a sixteen-byte blob with no
+provenance, aimed at a device whose writable state contains someone's hearing test, is not an
+experiment.
+
 ## Wear state, identified by experiment
 
 `steps --script wear` walks a human through seven states, one Enter each, so no frame
