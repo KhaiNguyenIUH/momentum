@@ -1412,7 +1412,7 @@ fn features(filter: &str) -> Result<(), Boxed> {
                     .payload
                     .split_first()
                     .map_or((false, &[][..]), |(first, rest)| (*first != 0, rest));
-                for pair in rest.chunks_exact(2) {
+                for pair in rest.chunks(2).filter(|pair| pair.len() == 2) {
                     println!(
                         "  feature 0x{:02x} version {:>2}   {}",
                         pair[0],
