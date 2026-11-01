@@ -1220,6 +1220,36 @@ itself — which moved, and still says what this section says it says.
 someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
 only reason it is named here is that a reader should know the id exists before they find it.
 
+**A second client, read in source, settles three questions this chapter had open.** The
+`hsctl` tool in the same repository as the command table implements exactly two of these ids,
+`0x2000` and `0x2001` — the thresholds, ratios and gains appear in its extracted device model
+and never on its wire, which is why `momentum personalization` is the only place these numbers
+get printed. Its toggle is:
+
+```rust
+let mut on  = matches!(mode, Some(Ps::Enabled) | Some(Ps::Standby));
+let enabled = ready && !hi_res;          // ready = mode ∈ { Disabled, Standby, Enabled }
+// and it writes only Enabled(3) and Disabled(1)
+```
+
+- **Standby counts as switched on.** Not a headset waiting to be enabled: `2` is an on state for
+  a profile that exists, which is what this unit has answered in every reading of two firmwares.
+  It also reframes the prediction this document recorded as failed — that `personalized` would
+  lift `0x2001` to `[03]` — because `[03]` may be a state the phone app passes through rather
+  than the one "running" is stored as.
+- **Nobody writes `[02]`, and nobody writes `0x2009`.** Two clients, both silent on those, so a
+  standby on any unit came from Sennheiser's software or the firmware, and the reset stays
+  unexercised everywhere.
+- **The Hi-Res exclusion is a rule in an app, not in a device.** Their row is greyed out while
+  Hi-Res is on, so the command is never sent; measured from this end, turning Hi-Res off left
+  `0x2001` exactly where it was. The two observations are the same fact seen from either side of
+  a client that refuses, and neither is the firmware doing anything.
+
+Their capability gate is `sound_personalization: at(2.13.18)`, the same firmware threshold as
+Hi-Res, taken from the vendor's per-product config rather than probed — a shortcut this program
+has deliberately not taken, because a MOMENTUM 5 on 6.21.5 answers the commands and does not
+need a version table to be told so.
+
 ## A curve written here did not survive the boot, and the cause is still open
 
 A power-off, a written-flat table, and the phone's Bluetooth switched off first, so nothing on

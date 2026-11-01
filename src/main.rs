@@ -258,6 +258,21 @@ enum Command {
         #[arg(long, default_value = "")]
         filter: String,
     },
+    /// Read the hearing profile, or switch personalization on and off.
+    ///
+    /// With no argument this reads the mode and prints the whole profile as numbers: six
+    /// thresholds, six ratios, three gains and the two preset indices it was built from.
+    /// With `on` or `off` it writes `0x2000` with `enabled` or `disabled`, which is the only
+    /// thing any known client writes into this block, and reads it back. The hearing test
+    /// that produces the profile is not here — it plays tones through the phone's microphone
+    /// and lives entirely in the app.
+    Personalization {
+        /// on | off — omit to read only
+        state: Option<String>,
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Read or set playback volume. Not a headset command: volume is negotiated
     /// by Windows over AVRCP, so this drives the audio endpoint — the same path
     /// as the tray slider, which for Bluetooth headphones moves the headset.
@@ -539,6 +554,9 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
         Command::Bass { state, filter } => Some(bass(state, filter)),
+        Command::Personalization { state, filter } => {
+            Some(personalization(state.as_deref(), filter))
+        }
         Command::Volume {
             level,
             filter,
@@ -2115,6 +2133,9 @@ fn destructive(id: u16) -> Option<&'static str> {
         0x0200 | 0x0201 => Some("it belongs to the firmware upgrade path"),
         0x1405 => Some("it deletes one host from the pairing list"),
         0x1406 => Some("it deletes the entire pairing list"),
+        0x2009 => {
+            Some("it erases the hearing profile, which can only be remade by the hearing test")
+        }
         _ => None,
     }
 }
@@ -2122,10 +2143,10 @@ fn destructive(id: u16) -> Option<&'static str> {
 #[cfg(test)]
 #[test]
 fn probe_refuses_the_four_commands_that_cannot_be_undone() {
-    for id in [0x0040u16, 0x0200, 0x0201, 0x1405, 0x1406] {
+    for id in [0x0040u16, 0x0200, 0x0201, 0x1405, 0x1406, 0x2009] {
         assert!(destructive(id).is_some(), "{id:#06x} must be refused");
     }
-    for id in [0x0041u16, 0x1400, 0x1404, 0x1a05, 0x2001] {
+    for id in [0x0041u16, 0x1400, 0x1404, 0x1a05, 0x2001, 0x2007] {
         assert!(
             destructive(id).is_none(),
             "{id:#06x} is a read, not a wreck"
@@ -2386,6 +2407,187 @@ fn bass(state: &str, filter: &str) -> Result<(), Boxed> {
     let wanted = switch(state)?;
     let mut session = open_session(filter)?;
     println!("{}", session.set_bass_boost(wanted)?.describe());
+    Ok(())
+}
+
+/// The mode of the hearing profile, in the vendor's words rather than ours.
+fn personal_mode(mode: Option<u8>) -> &'static str {
+    match mode {
+        Some(0) => "not parameterized — there is no hearing profile on this headset",
+        Some(1) => "disabled — a profile exists and is switched off",
+        Some(2) => "standby — a profile exists, and the vendor's own app counts this as on",
+        Some(3) => "enabled",
+        Some(4) => "calibrating — a hearing test is running somewhere",
+        Some(_) => "a mode nobody has named",
+        None => "no answer, so nothing is known",
+    }
+}
+
+/// `on` / `off` / nothing, into the byte `0x2000` wants. Separate from the command so that the
+/// refusal of every other word is tested rather than asserted.
+fn personal_switch(state: Option<&str>) -> Result<Option<u8>, String> {
+    match state.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+        None | Some("") => Ok(None),
+        Some("on") => Ok(Some(3)),
+        Some("off") => Ok(Some(1)),
+        Some(other) => Err(format!(
+            "`{other}` is not a state: `momentum personalization` takes `on`, `off`, or nothing"
+        )),
+    }
+}
+
+/// Big-endian `REAL32`s: the personalization block carries floats where the rest of this
+/// protocol carries bytes, which is why it needs a decoder of its own.
+fn floats(payload: &[u8]) -> Vec<f32> {
+    payload
+        .chunks(4)
+        .filter(|chunk| chunk.len() == 4)
+        .map(|chunk| f32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
+/// The floats as one line, two decimals — enough to show that the pairs are exactly 15.00
+/// apart, not nearly.
+fn numbers(payload: &[u8]) -> String {
+    let rendered: Vec<String> = floats(payload)
+        .iter()
+        .map(|value| format!("{value:+.2}"))
+        .collect();
+    if rendered.is_empty() {
+        "nothing".to_string()
+    } else {
+        rendered.join("   ")
+    }
+}
+
+/// The same values where they are not levels: a ratio of +1.00 is a sign error waiting to be
+/// read, so these lose the sign and gain a digit.
+fn ratios(payload: &[u8]) -> String {
+    let rendered: Vec<String> = floats(payload)
+        .iter()
+        .map(|value| format!("{value:.3}"))
+        .collect();
+    if rendered.is_empty() {
+        "nothing".to_string()
+    } else {
+        rendered.join("   ")
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn floats_are_read_big_endian_in_fours() {
+    let measured = [
+        0xc2u8, 0x9b, 0xcc, 0xf8, 0xc2, 0x7b, 0x99, 0xf1, 0x3f, 0x80, 0x00, 0x00,
+    ];
+    let values = floats(&measured);
+    assert_eq!(values.len(), 3);
+    assert!((values[0] - -77.9).abs() < 0.01, "{}", values[0]);
+    assert!((values[1] - -62.9).abs() < 0.01, "{}", values[1]);
+    assert!((values[2] - 1.0).abs() < f32::EPSILON);
+    assert_eq!(floats(&[0x00, 0x01]), [], "a partial float is not a number");
+    assert!(numbers(&[0x00]).starts_with("nothing"));
+}
+
+#[cfg(test)]
+#[test]
+fn personalization_accepts_on_off_and_nothing_only() {
+    assert_eq!(personal_switch(None).unwrap(), None);
+    assert_eq!(personal_switch(Some("")).unwrap(), None);
+    assert_eq!(personal_switch(Some("ON")).unwrap(), Some(3));
+    assert_eq!(personal_switch(Some(" off ")).unwrap(), Some(1));
+    assert!(personal_switch(Some("standby")).is_err());
+    assert!(personal_switch(Some("3")).is_err());
+}
+
+/// Read the hearing profile, or switch it. See the command's own help for what is guessed and
+/// what is known: the shapes are the vendor's, the values are this device's, and the meaning
+/// of a threshold is neither.
+#[cfg(windows)]
+fn personalization(state: Option<&str>, filter: &str) -> Result<(), Boxed> {
+    use momentum::cmd;
+    let wanted = personal_switch(state).map_err(|err| -> Boxed { err.into() })?;
+    let wait = Duration::from_millis(900);
+    let mut session = open_session(filter)?;
+    let reply = session
+        .request(cmd::GET_PERSONAL_MODE, Vec::new(), wait)
+        .ok();
+    let current = reply
+        .as_ref()
+        .and_then(|frame| frame.payload.first().copied());
+    match current {
+        Some(mode @ 5..) => println!("personalization: {} ({mode:#04x}).", personal_mode(current)),
+        _ => println!("personalization: {}.", personal_mode(current)),
+    }
+
+    if let Some(byte) = wanted {
+        if byte == 3 && current == Some(0) {
+            return Err(
+                "there is no hearing profile on this headset — the mode is `not \
+                 parameterized` — so there is nothing to switch on. The profile is made by a \
+                 hearing test in the phone app, not from here."
+                    .into(),
+            );
+        }
+        // The phone app greys this control out while Hi-Res is on. That is the app's rule and
+        // not the device's: turning Hi-Res off here left the mode untouched, twice.
+        if byte == 3
+            && session
+                .request(0x0406, Vec::new(), wait)
+                .ok()
+                .is_some_and(|frame| frame.payload.first() == Some(&0))
+        {
+            println!(
+                "note: Hi-Res is on. The phone app will not send this while it is; the headset \
+                 has never refused it here."
+            );
+        }
+        println!(">> 0x2000 [{byte:02x}]  {}", personal_mode(Some(byte)));
+        match session.request(cmd::SET_PERSONAL_MODE, vec![byte], wait) {
+            Ok(frame) => println!("<< {} {:02x?}", cmd::name(frame.cmd), frame.payload),
+            Err(err) => println!("the headset refused the write: {err}"),
+        }
+        if let Ok(frame) = session.request(cmd::GET_PERSONAL_MODE, Vec::new(), wait) {
+            let now = frame.payload.first().copied();
+            println!("read back: {} — {now:#04x?}", personal_mode(now));
+        }
+    }
+
+    for (id, label, level) in [
+        (cmd::GET_PERSONAL_THRESHOLDS, "thresholds", true),
+        (cmd::GET_PERSONAL_RATIOS, "ratios  ", false),
+        (cmd::GET_PERSONAL_GAINS, "gains   ", true),
+    ] {
+        match session.request(id, Vec::new(), wait) {
+            Ok(frame) if label == "gains   " => {
+                let preset = frame.payload.get(12..).unwrap_or(&[]);
+                println!(
+                    "{label} {}   preset indices {}",
+                    numbers(&frame.payload),
+                    momentum::proto::state::hex(preset)
+                );
+            }
+            Ok(frame) => {
+                let row = if level {
+                    numbers(&frame.payload)
+                } else {
+                    ratios(&frame.payload)
+                };
+                println!("{label} {row}");
+            }
+            Err(_) => println!("{label} no answer"),
+        }
+    }
+    println!(
+        "The vendor's model calls these Threshold, Ratio and Gains and never says what a \
+         threshold is measured against. On this unit three of the six sit exactly 15.00 dB \
+         above another three, three of the six ratios are exactly 1.000, and the gains are \
+         three floats and two bytes of preset indices — printed because they are in the \
+         device, they change, and nothing here explains them yet."
+    );
+    for warning in &session.warnings {
+        println!("note: {warning}");
+    }
     Ok(())
 }
 

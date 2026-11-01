@@ -256,6 +256,27 @@ pub const PUSH_EQ_GAIN_WIDE: u16 = 0x1091;
 /// traces, unknown on both — the only member of this block that neither product explains.
 pub const PUSH_EQ_STATE: u16 = 0x1093;
 
+/// Sound personalization, feature 16: the mode the hearing profile is in. One byte, and the
+/// vendor's names for it are `0` not parameterized, `1` disabled, `2` standby, `3` enabled,
+/// `4` calibrating. (live on MOMENTUM 5, which has only ever answered `[02]` here)
+pub const GET_PERSONAL_MODE: u16 = 0x2001;
+/// The setter of [`GET_PERSONAL_MODE`]. **Only `[01]` and `[03]` are known to be written by
+/// anything**: the vendor's own app maps its toggle to *disabled* and *enabled* and never
+/// sends standby or calibrating, and neither does this program. (payload shape from the
+/// vendor's device model, corroborated by a second client's source)
+pub const SET_PERSONAL_MODE: u16 = 0x2000;
+/// Six `REAL32`s, big-endian. A MOMENTUM 5 answers three pairs, each second member exactly
+/// 15.00 dB above its partner, and the pairs move when nothing else does. What they are
+/// thresholds *against* is not stated anywhere — see the personalization chapter. (live)
+pub const GET_PERSONAL_THRESHOLDS: u16 = 0x2003;
+/// Six `REAL32`s, big-endian, measured on MOMENTUM 5 as `2.212, 1.000, 1.664, 1.000, 1.116,
+/// 1.000` — three values and three exact ones, which is the shape of a ratio and its identity.
+/// (live)
+pub const GET_PERSONAL_RATIOS: u16 = 0x2005;
+/// Three `REAL32`s and two `UINT8`s: the gains of the profile and the two preset indices it
+/// was built from. Fourteen bytes, measured. (live)
+pub const GET_PERSONAL_GAINS: u16 = 0x2007;
+
 /// The sample rate of the live audio link, four bytes big-endian.
 ///
 /// Measured by playing from a phone and pausing again: `48000` while Qobuz streamed,

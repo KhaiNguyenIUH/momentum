@@ -79,8 +79,9 @@ answers.
 | `eq tune` | Interactive tuner: one connection, an edit per keystroke, `r` puts the session's starting snapshot back |
 | `mode [name\|0-5]` | Read or change the audio mode the DSP applies — `off`, `usereq`, `podcast`, `personalized`, `parametric`, `hearing` |
 | `anc <on\|off>` | Noise cancelling |
-| `transparency <0..=100>` | Transparent-hearing level; `0` turns it off |
+| `transparency <0..=100>` | The transparent-hearing level, where **`0` is maximum noise cancelling**, 50 neutral, 100 full transparency — its zero is not off. While adaptive noise control is on, the headset ignores this value |
 | `bass <on\|off>` | Bass boost |
+| `personalization [on\|off]` | The hearing profile as numbers — mode, six thresholds, six ratios, three gains and the preset indices it came from — or the switch. `on` and `off` write the two values any client is known to write, and nothing else |
 | `volume [0..=100]` | Playback volume, `--list` to see devices — via Windows, not the headset |
 | `mute [on\|off]` | Mute that endpoint; the level survives it |
 | `watch [--seconds N] [--raw]` | Live state pushes, decoded or raw |
