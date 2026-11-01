@@ -756,6 +756,34 @@ evidence of exactly such a writer and of nothing else. That is why the collapse 
 done as a no-op write first: if `0x2002` carrying the current values verbatim does not read back
 verbatim, the loop is real, and it was there all along.
 
+The second half of that same answer is closer, and scoring it is worth a table because the parts
+it gets right it gets right for the wrong reason — none of it was measured, and some of it
+contradicts the first half of itself, which promised five nodes and now says eight:
+
+| its claim | against this device |
+| --- | --- |
+| frequency, 2 bytes big-endian in Hz, 1 kHz as `03 E8` | **right.** We wrote band 0 to 90 Hz as `0x100a [00, 00, 5a]` and read back 90 Hz |
+| gain, one signed byte, `00` = 0 dB | **right about the byte and the zero, wrong about the step**: ten raw units per decibel, so `E2` is −3.0 dB — the app's own `v2` curve |
+| Q, 2 bytes, value ×100, so 0.70 is `00 46` | **wrong by 40.96×.** Q12 over 4096: `08 00` is 0.500 and `0B 5C` is 0.710, both written and read back here |
+| 8 bands, written as 8 quick sequential writes | eight bands, yes; but not one blob per node — one command per **parameter across all bands**: `0x100a` frequency, `0x100c` Q, `0x1010` gains |
+| "the hardware shifts into a legacy static equaliser state" | the static chain is not a state. Switching to `personalized` leaves the eight bands bit-identical, measured the same evening |
+| gain `0x00` across all channels to force flat | already done, twice. Acknowledged, read back as zeros, audible not at all, and replaced by the app's preset at the next power-off |
+
+That last row is where the whole scheme fails in practice rather than in arithmetic. Flattening
+the dynamic path was never the hard part — `0x2000 [01]` does it in one byte — and the static
+writes it wants you to make land on the **one path in this protocol that has never produced a
+sound**, which is the open problem of the boot-restore chapter, not a solved one.
+
+### The Python it offers, and why the answer is still no
+
+The discovery script is the first non-invented step any of these answers has produced: a BLE
+service and characteristic dump is read-only, sends nothing to the DSP, and would settle the
+`43333333-…` question in one run. It is still not something to run — the address is a
+placeholder, LE and BR/EDR addresses on this headset may differ, and the rule for this project
+has not changed once: if a step is worth taking, it goes into the CLI. `momentum gatt` — services,
+characteristics and handles for the device, on Windows LE — is real work against the Windows
+Bluetooth API rather than a afternoon, and it is on the list.
+
 ## Wear state, identified by experiment
 
 `steps --script wear` walks a human through seven states, one Enter each, so no frame
