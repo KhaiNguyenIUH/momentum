@@ -203,7 +203,7 @@ enum Command {
         /// Seconds to keep going. `0` runs until you interrupt it.
         #[arg(long, default_value_t = 30)]
         seconds: u64,
-        /// Poll the equaliser tables instead of waiting for pushes, printing only changes.
+        /// Poll the equaliser and the personalization block, printing only what changed.
         #[arg(long)]
         changes: bool,
         /// With `--changes`, seconds between polls. Not smaller: this stack reconnects for
@@ -1317,7 +1317,42 @@ fn eq_diff(
     out
 }
 
-/// Poll the equaliser tables and print only what moved, with the moment it moved.
+/// The personalization payloads worth watching, each named as narrowly as its decoding is.
+fn personal_name(id: u16) -> &'static str {
+    match id {
+        0x2101 => "personalization mode",
+        0x2103 => "thresholds",
+        0x2105 => "ratios",
+        0x2107 => "gains and preset indices",
+        _ => "personalization payload",
+    }
+}
+
+/// What moved in the personalization block between two snapshots, compared **by id** rather
+/// than by position: a poll in which one request fails must report nothing rather than
+/// compare two unrelated payloads that happen to share a slot in a list.
+fn personal_diff(before: &[(u16, Vec<u8>)], after: &[(u16, Vec<u8>)]) -> Vec<String> {
+    after
+        .iter()
+        .filter_map(|(id, now)| {
+            before
+                .iter()
+                .find(|(was_id, _)| was_id == id)
+                .map(|(_, was)| (id, was, now))
+        })
+        .filter(|(_, was, now)| was != now)
+        .map(|(id, was, now)| {
+            format!(
+                "{} {id:#06x}: [{}] → [{}]",
+                personal_name(*id),
+                hex(was),
+                hex(now)
+            )
+        })
+        .collect()
+}
+
+/// Poll the equaliser tables and the personalization block, printing only what moved.
 ///
 /// Polling is the whole method here. The device pushes these tables when it changes them
 /// itself and stays silent when another client writes them, so an app rewriting your curve
@@ -1335,8 +1370,12 @@ fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
     let every = every.max(2);
     let start = Instant::now();
     let mut seen: Option<momentum::proto::state::Equaliser> = None;
+    let mut seen_personal: Vec<(u16, Vec<u8>)> = Vec::new();
     let mut misses = 0u32;
-    println!("polling the equaliser every {every}s, connecting fresh each time. Ctrl-C to stop.");
+    println!(
+        "polling the equaliser and the personalization block every {every}s, connecting fresh \
+         each time. Ctrl-C to stop."
+    );
     loop {
         let mut session = match open_session(filter) {
             Ok(session) => {
@@ -1362,9 +1401,21 @@ fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
             }
         };
         let now = session.equaliser()?;
+        // The personalization block is polled by raw id and compared as bytes. Nothing here
+        // needs to know what a threshold *is* — the question being asked is who writes it and
+        // when, and decoding it would only make a wrong answer look authoritative.
+        let mut personal = Vec::new();
+        for id in [0x2001u16, 0x2003, 0x2005, 0x2007] {
+            if let Ok(frame) = session.request(id, Vec::new(), Duration::from_millis(700)) {
+                personal.push((frame.cmd, frame.payload));
+            }
+        }
         match &seen {
             None => {
                 print_bank(&now);
+                for (id, payload) in &personal {
+                    println!("{id:#06x} {:<26} [{}]", personal_name(*id), hex(payload));
+                }
                 println!("that is the baseline; every line after it is somebody's edit.");
                 for warning in &session.warnings {
                     println!("note: {warning}");
@@ -1374,9 +1425,13 @@ fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
                 for line in eq_diff(before, &now) {
                     println!("t+{:6.1}s  {line}", start.elapsed().as_secs_f32());
                 }
+                for line in personal_diff(&seen_personal, &personal) {
+                    println!("t+{:6.1}s  {line}", start.elapsed().as_secs_f32());
+                }
             }
         }
         seen = Some(now);
+        seen_personal = personal;
         if seconds != 0 && start.elapsed() >= Duration::from_secs(seconds) {
             return Ok(());
         }
@@ -2555,5 +2610,27 @@ mod tests {
             ..Default::default()
         };
         assert!(eq_diff(&read, &read).is_empty());
+    }
+
+    #[test]
+    fn personal_diff_names_the_payload_that_moved() {
+        use super::personal_diff;
+        let before = vec![(0x2101u16, vec![0x02]), (0x2103, vec![0xc2, 0x9b])];
+        let after = vec![(0x2101u16, vec![0x03]), (0x2103, vec![0xc2, 0x9b])];
+        assert_eq!(
+            personal_diff(&before, &after),
+            ["personalization mode 0x2101: [02] → [03]".to_string()]
+        );
+    }
+
+    /// The reason the comparison is keyed by id: a poll in which one request fails has a
+    /// shorter list, and zipping by position would compare the wrong payloads and print a
+    /// change that never happened.
+    #[test]
+    fn personal_diff_survives_a_poll_that_answered_less() {
+        use super::personal_diff;
+        let before = vec![(0x2101u16, vec![0x02]), (0x2103, vec![0xc2, 0x9b])];
+        let after = vec![(0x2103u16, vec![0xc2, 0x9b])];
+        assert!(personal_diff(&before, &after).is_empty());
     }
 }
