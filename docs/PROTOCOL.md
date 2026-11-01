@@ -1215,6 +1215,28 @@ itself — which moved, and still says what this section says it says.
 someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
 only reason it is named here is that a reader should know the id exists before they find it.
 
+## The gain table may follow the audio mode — unresolved, and it matters
+
+At 11:35, with the audio mode at `usereq`, `eq show` read eight zeros. At 12:55, with the mode
+at `personalized`, it read `−4.0, 0, −1.0, 0, 0, +1.1, 0, +1.0` — **byte for byte the table
+that arrived on `0x1082` at 23:05 the previous night**, which was the table this document
+called "rewritten by nobody" and spent an evening looking for a culprit over.
+
+Two explanations, and the tool cannot currently tell them apart:
+
+- **The equaliser is stored per audio mode**, one table for the user EQ and another under
+  personalization. That would explain last night's change, the 23:05 moment being exactly when
+  this unit had been put into other modes, and it would make every statement in this document
+  about "the" gain table quietly wrong about which table it meant.
+- **`Session::equaliser()` is reading a table that is not always there.** Gains come from
+  `0x1002` per band and from the `0x1082` push, and if the two disagree or one of them arrives
+  late, the same command can print different things minutes apart, which is the worst possible
+  failure in a program whose entire job is telling you what the device holds.
+
+Toggling the mode and reading the bank at each stop separates them, and until it is done,
+every historical claim in this document about a flat curve should be read as "flat in whatever
+mode the unit happened to be in". That includes the author's.
+
 ## The firmware states its own feature list
 
 `Core_GetSupportedFeatures` is answered **per vendor namespace**: the same command id sent to
