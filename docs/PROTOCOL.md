@@ -1079,6 +1079,51 @@ program in between — plausibly the app restoring it when its personalisation s
 which nobody has confirmed either way. Worth knowing before anything is built on the mode
 being sticky: **it is only as persistent as the last client that wrote it.**
 
+## Feature 16, found without touching the phone
+
+An hour later the same mystery was solved by reading someone else's homework instead of
+knocking on ids. [xndbogdan's map](https://github.com/xndbogdan/sennheiser-control/blob/main/PROTOCOL.md)
+was built by **static analysis of the shipped app**, and the reason it was possible is worth
+knowing before anyone tries to repeat it: Smart Control is a **NativeScript** app, so all of
+its device logic is plain JavaScript in `assets/app/bundle.js` and every product is described
+by a declarative JSON model — `assets/app/m4.json` plus optional `assets/app/features/*.json`
+merged by firmware gate. Unzip the APK, read the JSON, done. Their later work on **Smart
+Control Plus** is the harder case: a Flutter app with obfuscated Dart AOT and per-file
+encrypted assets, where they had to recover enums with `blutter` and decrypt the product
+config to get anywhere.
+
+Applying their feature-16 table — sound personalization — to this unit, unchanged, gave
+answers on the first try:
+
+```
+0x2001 → 0x2101 [02]                                  mode: 2 = standby
+                                                        (0 not_parameterized, 1 disabled,
+                                                         2 standby, 3 enabled, 4 calibrating)
+0x2003 → 0x2103 REAL32 ×6   −71.77, −56.77, −79.71, −64.71, −85.251, −70.251
+0x2005 → 0x2105 REAL32 ×6     2.212,  1.0,    1.664,  1.0,    1.116,   1.0
+0x2007 → 0x2107 REAL32 ×3 + UINT8 + UINT8   3.43, 0.0, 1.37, presetX 5, presetY 9
+```
+
+Fourteen bytes where the model says three floats and two bytes, six floats where it says
+six, in big-endian IEEE 754: **this unit holds a hearing profile**, written by the app, read
+out by a program that never saw the app. `0x0884` gained its name the same way — the model
+lists it as the `AudioMode` notification, which is what last night's `[00, 03]` and `[00, 01]`
+were, and the M4 tool's own hardware run saw the same frame carry `[00, 02]` after a podcast
+set. Two inferences from one evening, both resolved by the same document.
+
+What it does *not* settle is the shape of the numbers. The thresholds are negative and
+cluster between −56 and −85, the ratios are all at or above one, and nothing here says what
+reference they are measured against; guessing "dB HL at six test frequencies" would be a
+story, not a measurement. The mode is `standby` while the audio mode sits at `usereq`, and
+the Plus config for the M4 says personalization is disabled while Hi-Res is on — this unit
+answers `0x0406 [00]`, which is `betterAudio`, the Hi-Res setting. That is a correlation
+between two settings the app is known to couple, not a proof that one causes the other, and
+it is testable in one minute by anyone who wants it: turn Hi-Res off, read `0x2001` again.
+
+`0x2009`, `PersonalizedSound_Reset`, sits in the same feature and is a write that erases
+someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
+only reason it is named here is that a reader should know the id exists before they find it.
+
 ### There is no parametric equaliser on this unit
 
 The theory was worth testing and is now dead, so the four things that killed it are worth

@@ -423,6 +423,22 @@ pub fn name(cmd: u16) -> &'static str {
         PUSH_SAMPLE_RATE => "sample_rate_push",
         0x1A81 => "mode_list_push",
         0x2C83 => "wear_push",
+        // The audio mode's own notification, `0x0804 | 0x80`. Named from the app's device
+        // model, which lists `Ntf 0x0884` against `AudioMode`, and seen arriving with
+        // `[00, 03]` and `[00, 01]` as the mode moved on a MOMENTUM 5 — the M4 tool's
+        // hardware check saw the same frame carry `[00, 02]` after a podcast-mode set.
+        // A client that registers feature 4 never has to poll the mode. (live)
+        0x0884 => "audio_mode_push",
+        // Sound personalization, feature 16: mode at `0x2001`, six hearing thresholds at
+        // `0x2003`, six ratios at `0x2005`, three gains and two preset indices at `0x2007`.
+        // Ids and schema are Sennheiser's own, published in the M4 device model shipped
+        // inside Smart Control; the confirmation is that a MOMENTUM 5 answers all four
+        // getters with payloads of exactly the documented shapes. (live)
+        0x2101 => "personal_mode_reply",
+        0x2103 => "personal_threshold_reply",
+        0x2105 => "personal_ratio_reply",
+        0x2107 => "personal_gains_reply",
+        0x2081 => "personal_mode_push",
         _ => "unknown",
     }
 }
