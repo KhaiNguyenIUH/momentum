@@ -1298,6 +1298,63 @@ Hi-Res, taken from the vendor's per-product config rather than probed — a shor
 has deliberately not taken, because a MOMENTUM 5 on 6.21.5 answers the commands and does not
 need a version table to be told so.
 
+## What personalization is: a volume-dependent equaliser
+
+The owner has run the calibration, and the procedure is the thing the wire could not say.
+
+**Set a mix of three things — base, strings, drums — to your liking. Then set it again at a
+lower volume. After that, fine-tune without recalibrating, on two controls.**
+
+Every number on this page falls out of that, and it is worth setting them side by side, because
+a guess that explains every measurement is worth more than a measurement nobody can read:
+
+```
+thresholds  -77.90 / -62.90   |   -80.61 / -65.61   |   -88.12 / -73.12      three faders × two levels
+ratios        2.212 / 1.000   |     1.664 / 1.000   |     1.116 / 1.000      one reference and one factor, per fader
+gains         +3.43   +0.00   +1.37   x 5   y 9      the mix, then the two fine-tune sliders
+```
+
+**Six thresholds are not six bands, they are three at two listening levels** — which is why the
+second member of each pair sat exactly 15.00 above the first in every reading across two
+firmwares: that is the fixed step the app takes down between the two passes, a property of the
+procedure, not of anybody's hearing. It is also why the pairs were seen to move while the ratios
+and gains stayed bit-identical: **re-running a pass rewrites the thresholds alone**, which was
+the behaviour that made these look like a mysterious live process last night.
+
+The ratios follow the same three-pair structure and carry `1.000` at the same end of every pair
+— an identity on one side of an interpolation and a factor on the other. The three factors are
+unequal and not round (`2.212`, `1.664`, `1.116`), which is what derived quantities look like
+rather than chosen ones.
+
+Two readings in this document are **retracted** by the account.
+
+- **`preset x` and `preset y` are not indices.** The model's names for the last two bytes of
+  `0x2107` invited a lookup table that does not exist; they are the two fine-tune values, `x`
+  and `y`, which is also the only reading in which the vendor's own word *preset* means nothing
+  more than "the current setting".
+- **The volume null from last night was not a null.** Headset volume was set to 0 and the
+  thresholds did not move, and the conclusion drawn was that the level does not affect them.
+  That was the wrong prediction to test: the thresholds are the *breakpoints* the calibration
+  recorded, not the curve being applied, and a breakpoint does not move when you turn the knob.
+  The level-dependent thing is what the DSP builds between them, and that is not on this
+  channel at all.
+
+And it makes sense of the strangest fact in the whole equaliser chapter: **`personalized` is
+audible with the eight-band table doing nothing.** A graphic equaliser that stops when its mode
+stops, and a second path that keys off signal level and off the listener rather than off a
+slider, are not the same mechanism, and only the first one has ever been visible on this
+channel.
+
+What is still not known, and is not knowable from this channel: which band or frequency range
+each fader actually steers, what a threshold is measured in — dB SPL at the ear is the obvious
+candidate and is a guess — and what the curve does between the two calibration levels. The
+ear test that would say something about the last of those costs nothing: with the graphic
+equaliser flat and the same recording at two volumes, a difference in tonal balance between
+`personalized` and `usereq` that *changes with volume* is this mechanism, and anything that does
+not change with volume is not.
+
+
+
 ## A curve written here did not survive the boot, and the cause is still open
 
 A power-off, a written-flat table, and the phone's Bluetooth switched off first, so nothing on

@@ -2446,33 +2446,30 @@ fn floats(payload: &[u8]) -> Vec<f32> {
         .collect()
 }
 
-/// The floats as one line, two decimals — enough to show that the pairs are exactly 15.00
-/// apart, not nearly.
-fn numbers(payload: &[u8]) -> String {
-    let rendered: Vec<String> = floats(payload)
-        .iter()
-        .map(|value| format!("{value:+.2}"))
+/// The floats as three pairs, which is what they are: one category of the mix at each of the
+/// two listening levels the calibration is run at.
+fn pairs(payload: &[u8], render: impl Fn(f32) -> String) -> String {
+    let rows: Vec<String> = floats(payload)
+        .chunks(2)
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            pair.iter()
+                .map(|value| render(*value))
+                .collect::<Vec<_>>()
+                .join(" / ")
+        })
         .collect();
-    if rendered.is_empty() {
+    if rows.is_empty() {
         "nothing".to_string()
     } else {
-        rendered.join("   ")
+        rows.join("   |   ")
     }
 }
 
-/// The same values where they are not levels: a ratio of +1.00 is a sign error waiting to be
-/// read, so these lose the sign and gain a digit.
-fn ratios(payload: &[u8]) -> String {
-    let rendered: Vec<String> = floats(payload)
-        .iter()
-        .map(|value| format!("{value:.3}"))
-        .collect();
-    if rendered.is_empty() {
-        "nothing".to_string()
-    } else {
-        rendered.join("   ")
-    }
-}
+/// The three faders of the mix, in the order the phone app shows them. That order is the
+/// owner's account of the screen and is assumed here to be the order of the array; it has not
+/// been checked against the app.
+const MIX: [&str; 3] = ["base", "strings", "drums"];
 
 #[cfg(test)]
 #[test]
@@ -2486,7 +2483,24 @@ fn floats_are_read_big_endian_in_fours() {
     assert!((values[1] - -62.9).abs() < 0.01, "{}", values[1]);
     assert!((values[2] - 1.0).abs() < f32::EPSILON);
     assert_eq!(floats(&[0x00, 0x01]), [], "a partial float is not a number");
-    assert!(numbers(&[0x00]).starts_with("nothing"));
+    assert!(pairs(&[0x00], |_| String::new()).starts_with("nothing"));
+}
+
+#[cfg(test)]
+#[test]
+fn six_values_are_printed_as_three_pairs() {
+    let one = [0x3f, 0x80, 0x00, 0x00];
+    let two = [0x40, 0x00, 0x00, 0x00];
+    let three = [0x40, 0x40, 0x00, 0x00];
+    let mut six = Vec::new();
+    for pair in [[one, two], [three, one], [two, one]] {
+        six.extend_from_slice(&pair[0]);
+        six.extend_from_slice(&pair[1]);
+    }
+    assert_eq!(
+        pairs(&six, |value| format!("{value:.1}")),
+        "1.0 / 2.0   |   3.0 / 1.0   |   2.0 / 1.0"
+    );
 }
 
 #[cfg(test)]
@@ -2553,37 +2567,54 @@ fn personalization(state: Option<&str>, filter: &str) -> Result<(), Boxed> {
         }
     }
 
-    for (id, label, level) in [
-        (cmd::GET_PERSONAL_THRESHOLDS, "thresholds", true),
-        (cmd::GET_PERSONAL_RATIOS, "ratios  ", false),
-        (cmd::GET_PERSONAL_GAINS, "gains   ", true),
-    ] {
-        match session.request(id, Vec::new(), wait) {
-            Ok(frame) if label == "gains   " => {
-                let preset = frame.payload.get(12..).unwrap_or(&[]);
-                println!(
-                    "{label} {}   preset indices {}",
-                    numbers(&frame.payload),
-                    momentum::proto::state::hex(preset)
-                );
-            }
-            Ok(frame) => {
-                let row = if level {
-                    numbers(&frame.payload)
-                } else {
-                    ratios(&frame.payload)
-                };
-                println!("{label} {row}");
-            }
-            Err(_) => println!("{label} no answer"),
+    if let Ok(frame) = session.request(cmd::GET_PERSONAL_THRESHOLDS, Vec::new(), wait) {
+        println!(
+            "thresholds {}   per fader: at level, then 15 dB lower",
+            pairs(&frame.payload, |value| format!("{value:+.2}"))
+        );
+    } else {
+        println!("thresholds no answer");
+    }
+    if let Ok(frame) = session.request(cmd::GET_PERSONAL_RATIOS, Vec::new(), wait) {
+        println!(
+            "ratios     {}",
+            pairs(&frame.payload, |value| format!("{value:.3}"))
+        );
+    } else {
+        println!("ratios     no answer");
+    }
+    match session.request(cmd::GET_PERSONAL_GAINS, Vec::new(), wait) {
+        Ok(frame) => {
+            let faders: Vec<String> = MIX
+                .iter()
+                .zip(floats(&frame.payload))
+                .map(|(name, value)| format!("{name} {value:+.2}"))
+                .collect();
+            let byte = |index: usize| {
+                frame
+                    .payload
+                    .get(index)
+                    .map_or_else(|| "?".to_string(), |value| value.to_string())
+            };
+            println!(
+                "mix        {}   fine tune  x {}   y {}",
+                faders.join("   "),
+                byte(12),
+                byte(13)
+            );
         }
+        Err(_) => println!("mix        no answer"),
     }
     println!(
-        "The vendor's model calls these Threshold, Ratio and Gains and never says what a \
-         threshold is measured against. On this unit three of the six sit exactly 15.00 dB \
-         above another three, three of the six ratios are exactly 1.000, and the gains are \
-         three floats and two bytes of preset indices — printed because they are in the \
-         device, they change, and nothing here explains them yet."
+        "This is a volume-dependent equaliser, calibrated twice. The mix — the app's base, \
+         strings and drums, in that order on the screen and assumed in that order in the array \
+         — is set once at a comfortable level and then again 15 dB lower, and each pair above \
+         is one fader at those two listening levels, which is why the gap between them is a \
+         constant rather than a measurement. Three of the six ratios are exactly 1.000, the \
+         shape of an interpolation between two curves, and `x` and `y` are the fine-tune \
+         sliders that work without a recalibration. The vendor's model calls those two bytes \
+         `preset x` and `preset y`, which is why this program first read them as an index into \
+         a table that does not exist."
     );
     for warning in &session.warnings {
         println!("note: {warning}");

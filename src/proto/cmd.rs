@@ -265,16 +265,27 @@ pub const GET_PERSONAL_MODE: u16 = 0x2001;
 /// sends standby or calibrating, and neither does this program. (payload shape from the
 /// vendor's device model, corroborated by a second client's source)
 pub const SET_PERSONAL_MODE: u16 = 0x2000;
-/// Six `REAL32`s, big-endian. A MOMENTUM 5 answers three pairs, each second member exactly
-/// 15.00 dB above its partner, and the pairs move when nothing else does. What they are
-/// thresholds *against* is not stated anywhere — see the personalization chapter. (live)
+/// Six `REAL32`s, big-endian: **three pairs, one per fader of the mix, each pair the two
+/// listening levels the calibration is run at** — the procedure sets the mix at a comfortable
+/// level and then again 15 dB lower. Measured on a MOMENTUM 5 as `-77.90 / -62.90`,
+/// `-80.61 / -65.61`, `-88.12 / -73.12`: the second member of every pair exactly 15.00 above
+/// the first, in every reading, which is the app's fixed step between the two passes and not
+/// a property of the ear. The pairs have been seen to move while [`GET_PERSONAL_RATIOS`] and
+/// [`GET_PERSONAL_GAINS`] stayed bit-identical, so a repeated pass rewrites only these. (the
+/// procedure is the owner's account of the phone app; the arithmetic is measured here)
 pub const GET_PERSONAL_THRESHOLDS: u16 = 0x2003;
-/// Six `REAL32`s, big-endian, measured on MOMENTUM 5 as `2.212, 1.000, 1.664, 1.000, 1.116,
-/// 1.000` — three values and three exact ones, which is the shape of a ratio and its identity.
-/// (live)
+/// Six `REAL32`s, big-endian, measured as `2.212 / 1.000`, `1.664 / 1.000`, `1.116 / 1.000`.
+/// Three of the six are exactly one, at the same end of every pair, which is the shape of an
+/// interpolation between the two calibration curves — one level being the reference and the
+/// other carrying the factor. What is interpolated between them is not stated by anyone. (live)
 pub const GET_PERSONAL_RATIOS: u16 = 0x2005;
-/// Three `REAL32`s and two `UINT8`s: the gains of the profile and the two preset indices it
-/// was built from. Fourteen bytes, measured. (live)
+/// Three `REAL32`s and two `UINT8`s: **the mix the owner set — base, strings, drums, in the
+/// order the phone app shows them, which is assumed but not proven to be the order of the
+/// array — and then the two fine-tune sliders that work without recalibrating.** Fourteen
+/// bytes, measured: `+3.43, +0.00, +1.37` with `x = 5`, `y = 9`. The model names the two bytes
+/// `preset x` and `preset y`, and an earlier reading here took that literally and called them
+/// indices into a table; they are the slider values. (procedure from the owner's account, byte
+/// count and values measured on MOMENTUM 5)
 pub const GET_PERSONAL_GAINS: u16 = 0x2007;
 
 /// The sample rate of the live audio link, four bytes big-endian.
