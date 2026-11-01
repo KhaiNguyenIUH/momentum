@@ -2811,8 +2811,10 @@ async fn gatt(
             .unwrap_or_default();
         println!(
             "the link reports connected={} and the advertisement carried {} service(s) {:?}, \
-             while the attribute table came back empty three times — read that as Windows \
-             refusing the cache, not as a device with no GATT.",
+             while the attribute table came back empty three times. Run this same command \
+             against another nearby peripheral: if that one dumps its table, the empty answer \
+             here is the device refusing an LE link with this machine — or wanting it paired \
+             first — and not a Windows cache problem.",
             peripheral.is_connected().await.unwrap_or(false),
             advertised.len(),
             advertised

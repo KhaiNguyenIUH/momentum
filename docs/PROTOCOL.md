@@ -471,7 +471,8 @@ The command the phone writes with has still never been seen by any host but the
 phone. Watching cannot help further: a second connection is notified about *state*,
 it does not mirror another connection's *commands*. The remaining instruments are a
 controller-side snoop log, or the second GAIA service that `rf-scan` shows on
-RFCOMM channel 1, which nothing has ever connected to.
+RFCOMM channel 1 — which was connected later and proved to be **the same server**, same
+serial, same refusals, byte for byte, so it is no second door.
 
 ### Which store survives a disconnect
 
@@ -1857,11 +1858,19 @@ address does not. It now also carries **manufacturer `0x0ba3`**, which the earli
 did not see.
 
 `connect()` returns Ok. The link does not come up: `is_connected()` is **false**, and three
-discovery attempts in a row return an empty table, twice, identically. So the sharper
-statement of the old finding is not "the attribute table is empty" but **this machine cannot
-open an LE link to the headset at all** — the table is not unreadable, it is unreachable, and
-the difference matters because only the second one is a fact about Windows rather than about
-the device.
+discovery attempts in a row return an empty table, twice, identically — and a third time with
+the phone's Bluetooth switched off, which was the innocent explanation on offer and is now
+excluded.
+
+The control that turns this from a tool problem into a finding: **the same command against
+another peripheral in the same room** connected and dumped three services and thirty
+characteristics with their properties, on the first attempt. Our LE path works. **The MOMENTUM
+5 specifically will not establish an LE link with this machine**, while it goes on advertising
+at it merrily. Two causes remain and nothing here separates them: the headset refusing an LE
+connection to a host that is not its bond partner, or Windows declining a GATT table for a
+device it has not paired. Only the second is testable from this side, and only in Settings —
+pairing the `M5 BT` node — which risks unsettling a Swift Pair relationship for a device that
+is already paired over classic, so it is a deliberate choice and not a next step.
 
 That is the whole of what the GATT half of those tables can be answered with from here. The
 advertisement names no `0xFE11` and nothing that could carry GAIA; no LE link can be opened
