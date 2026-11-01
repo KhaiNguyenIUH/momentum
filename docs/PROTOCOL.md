@@ -1337,10 +1337,15 @@ and `0x2105` holds the soft mix as three ratios against it, and neither array ca
 level choices at all.
 
 The pairs are also the one thing seen to move on their own — the ratios and gains have stayed
-bit-identical across readings where they slid — which means **there is a pass that can be re-run
-without touching the mix.** That is the strongest evidence on this channel that the hearing
-measurement the owner half-remembers exists, and it is the one measurement here that would be
-worth re-taking deliberately, because the current values are the only record of it.
+bit-identical across readings where they slid. That is evidence of **a writer that touches
+`0x2003` alone**, and nothing more: a partially re-applied personalization explains it as well
+as anything else, the owner has never run a hearing test, and no command on this channel has
+ever been attributed to one. An earlier draft of this section called the sliding pairs "the
+strongest evidence that the hearing measurement exists", which is the same mistake in miniature
+that this document keeps making — reaching for the mechanism that would be tidy instead of the
+one the data licenses. What is established is the arithmetic: `0x2007` carries three faders when
+six were set, `0x2105` carries three factors with an exact `1.000` beside each, and `0x2003`
+carries three pairs of a fixed 15.00 width whose author is unidentified.
 
 **The units are unknown, and the guess has changed.** `-62` to `-88` was read here as plausible
 hearing thresholds in some sound-pressure unit; they are at least as likely to be a digital
