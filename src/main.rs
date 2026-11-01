@@ -63,6 +63,16 @@ enum Command {
         notify: Option<u64>,
     },
 
+    /// List the Bluetooth LE peers Windows knows about and how it lists them.
+    /// Read what it can say: the pairing flag is Windows' state for the peer, and a
+    /// classic bond satisfies it — a headset paired over BR/EDR appears as paired
+    /// here without any LE key having been exchanged.
+    LeBonds {
+        /// Only show devices whose name contains this text; empty lists every peer.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
+
     /// List paired devices publishing an RFCOMM control service.
     RfScan {
         /// Select by service name or peer address, e.g. "GAIA" or
@@ -530,6 +540,7 @@ async fn run(command: Command) -> Result<(), Boxed> {
 fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
     match command {
         Command::RfScan { filter, uuid } => Some(rf_scan(filter, uuid.as_deref())),
+        Command::LeBonds { filter } => Some(le_bonds(filter)),
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
         Command::Eq(action) => Some(eq(action)),
@@ -597,6 +608,17 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         })),
         _ => None,
     }
+}
+
+#[cfg(windows)]
+fn le_bonds(filter: &str) -> Result<(), Boxed> {
+    momentum::le::bonds(filter)?;
+    println!(
+        "\nWindows keeps one pairing state per peer, and a classic bond satisfies it. A headset\n\
+         in the first group is therefore not evidence that an LE key was ever exchanged — which\n\
+         is exactly why a `gatt` failure against it cannot be fixed by pairing it again."
+    );
+    Ok(())
 }
 
 #[cfg(windows)]

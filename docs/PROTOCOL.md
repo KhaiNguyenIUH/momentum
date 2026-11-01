@@ -1879,6 +1879,25 @@ closes the second-seat idea from this direction: **there is no LE seat to take.*
 that matters — a frame the headset sends that has never been seen by any host but the phone —
 has one instrument left, and it is on the phone.
 
+Two causes remained and this settled which. **`momentum le-bonds`** asks Windows, per LE peer,
+how it lists it: `M5 BT` is in the **paired** group. Windows keeps *one* pairing state per
+peer and a classic bond satisfies it, so the LE identity is not a second node to pair — the
+owner watched the picker search while the headset sat in pairing mode and **nothing new
+appeared to pair**, which is the same fact from the other side. There is no LE pairing left to
+do, so pairing was never going to be the fix.
+
+The pairing mode was worth the detour for one more reason: it removes the last excuse. With
+the headset freshly discoverable, `gatt` failed identically — connected false, three empty
+enumerations. Whatever refuses the LE link is not waiting for a bond.
+
+One name in this chapter has to be walked back. **`M5 BT` is the name the owner gave the
+headset in Windows**, not one the device chose, and the `local_name` that `scan` and `gatt`
+print is Windows' friendly name for the peer rather than a string read out of the advertisement.
+It cannot be used to tell an LE identity from a classic one, which is what I was implicitly
+doing when I wrote that the peer at `46:1E:05:C7:9D:30` was "a different address from the
+classic one" as if that settled it: the address differing is a fact, calling it a different
+*identity* was a reading.
+
 ## The equaliser, read
 
 `0x1082` is **eight signed bytes, one per band, in tenths of a dB, band 1 first** — no

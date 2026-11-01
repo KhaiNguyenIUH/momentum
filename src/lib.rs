@@ -28,6 +28,7 @@
 pub mod error;
 #[cfg(windows)]
 pub mod host;
+pub mod le;
 pub mod link;
 pub mod proto;
 #[cfg(windows)]

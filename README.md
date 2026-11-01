@@ -94,7 +94,8 @@ answers.
 | `rf-scan [--uuid …]` | List paired devices publishing an RFCOMM control service |
 | `scan [--seconds N] [--filter text]` | Bluetooth LE advertisements, with the services and manufacturer data each one carries |
 | `gatt [--address A] [--notify N]` | Dump an LE device's GATT table, read it, stream its notifications |
-| `scan`, `gatt` | Bluetooth LE probes, for headsets that expose control over GATT instead |
+| `scan`, `gatt` | Bluetooth LE probes, for headsets that expose control over GATT instead — measured on this one: it will not open an LE link with Windows |
+| `le-bonds` | How Windows lists each LE peer, paired or not. One pairing state per peer, so a classic bond satisfies it |
 
 ## As a library
 
