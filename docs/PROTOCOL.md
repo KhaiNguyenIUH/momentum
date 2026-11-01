@@ -1114,23 +1114,37 @@ set. Two inferences from one evening, both resolved by the same document.
 What it does *not* settle is the shape of the numbers. The thresholds are negative and
 cluster between −56 and −85, the ratios are all at or above one, and nothing here says what
 reference they are measured against; guessing "dB HL at six test frequencies" would be a
-story, not a measurement. The mode is `standby` while the audio mode sits at `usereq`, and the Plus config for the M4
-says personalization is disabled while Hi-Res is on — `usageWithHighResolutionSupported:
-false`. This unit answers `0x0406 [00]`, whose published name is *better audio* rather than
-*more stable connection*, which is why I called it the Hi-Res setting. **That was an
-over-reach and is here retracted**: the app exposes an *Audio mode priority* tab with two
-switches, Hi-Res 24-bit/96 kHz and Lossless 16-bit/44.1 kHz, and nothing has yet shown that
-either of them is the byte at `0x0406`. What is observable from this channel is the stream
-itself — `0x0880` and the rate at `0x089a` — and last night those read `[0b]` with `0x17700`
-= **96000 Hz**, where the same frames from this PC sit at `[02]` and 44100 because the inbox
-Windows driver offers nothing above 16-bit/44.1. So 96 kHz was reached, from the phone, with
-a codec value this document has never named: `0b`, fourth entry in a list where we have only
-dared name `02`, `08` and `ff`.
+story, not a measurement. That paragraph went through three versions in one morning and the first two are worth
+keeping in the record, because they are the same mistake in opposite directions. Version one
+said `0x0406` *is* the Hi-Res setting, on the strength of a published name and a matching
+value. Version two retracted that as an over-reach when the app turned out to expose an
+*Audio mode priority* tab with two switches, reasoning that a byte we could read live was a
+poor candidate for a setting that demands a firmware restart. Both were conclusions drawn
+before the measurement, and the measurement took ninety seconds: the app was told to switch
+Hi-Res off, it asked for the headphones to come off and for **Apply and restart**, and
 
-Two questions, one toggle away, and the toggle belongs in the app rather than in a write
-from here: does `0x0406` move at all when either switch moves, and does `0x2001` leave
-`standby` when Hi-Res goes off? The second would prove the coupling the config asserts; the
-first would either prove or destroy the sentence this section used to contain.
+```
+before the restart    0x0406 [00]     0x2001 [02]     0x0800 [0b]   0x089a 96000 Hz
+after                 0x0406 [01]     0x2001 [02]     0x0800 [ff]   0x089a      0 Hz
+```
+
+**`0x0406` is that switch.** `0` is high resolution, `1` is the compatible path, and the
+published names — *better audio* and *better connection stability* — were accurate. A setting
+that needs a restart to take effect is still a setting, and a byte that answers live is still
+live; the reasoning that made the two seem incompatible was the error, not the sourcing.
+
+Two things the same two reads settled. **The coupling between high resolution and
+personalization is not supported**: Hi-Res went off and `0x2001` stayed at `2`, standby,
+unchanged. Whatever keeps it in standby, it is not the codec. The likelier reading is duller
+and better: `standby` describes personalization itself — a stored, ready profile that is not
+the selected audio mode, which is exactly the state it should be in while `0x0804` says
+`usereq`. That predicts `0x2001 [03]` the moment the audio mode becomes `personalized`, which
+is one command to test and has not been tested yet.
+
+And the codec did move, to `ff` with the rate at zero, which is not a codec choice but
+**no stream at all**: after a restart nothing is playing, and A2DP does not come back up until
+audio does. So `0b`, the value that meant 96 kHz, is still unnamed, and naming it needs a
+phone actually playing something rather than a headset sitting idle.
 
 `0x2009`, `PersonalizedSound_Reset`, sits in the same feature and is a write that erases
 someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
@@ -1307,7 +1321,7 @@ MOMENTUM 5, firmware 6.21.1, and three of them explain things this document had 
 | `0x0401` | `[01]` | **wear detection on** — the first direct read of it; the app's setting, now on the wire |
 | `0x0402` | `[02]` | physical state: `01` in case, `02` not on head, `03` on head. The same value `0x0482` pushes. (live, and it read `[02]` correctly with the headphones on a desk) |
 | `0x080d` | `[01]` | smart pause on — pause the stream when they come off. Sent alone; in a batch it was twice answered with the generic `0x0180`, see the rule at the top |
-| `0x0406` | `[00]` | Bluetooth compatibility mode, `0` = *better audio*; **not shown** to be the app's Hi-Res switch, see the personalization section |
+| `0x0406` | `[00]`→`[01]` | **live**: the app's *Audio mode priority*. `0` = Hi-Res 24-bit/96 kHz, `1` = the compatible path. Seen to move across the app's Apply-and-restart; the setter is `0x0405` per the app's model, untested from here because the change needs that restart anyway |
 | `0x0601 [00]` | `[00, 03, 84]` | **auto power-off timer 0 = 900 s** |
 | `0x0601 [01]` | `0x0781 [05]` | timer 1, limbo: refused with code `5` — the same refusal their M4 gives |
 | `0x0802` | `[02]` | voice prompts: 0 off, 1 tones, 2 voice + tones → **voice and tones** |
