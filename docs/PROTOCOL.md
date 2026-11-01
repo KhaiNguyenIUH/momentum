@@ -708,6 +708,54 @@ payload will not be sent from here. The rule has not moved all week: a sixteen-b
 provenance, aimed at a device whose writable state contains someone's hearing test, is not an
 experiment.
 
+### How to flatten the engine, answered properly
+
+The question that produces these tables — *what addresses and what exact layout disable the
+dynamic part of personalization* — has a real answer, and it does not need a sniffer, a handle
+table or a proprietary header. It is the mode.
+
+```
+momentum personalization off        →  0x2000 [01]   disabled
+                                      0x2000 [02]   standby  (what the unit reports now)
+                                      0x2000 [03]   enabled
+                                      0x2000 [04]   calibrating
+```
+
+The mode is a `UINT8` at position 0 of `PersonalizedSound_Mode_Set`, vendor `0x0495`, command
+`0x2000`, over RFCOMM, with the names coming from the vendor's own device model. **`[01]` is the
+flat/bypass the invented table was groping for**: it is a global state on the personalization
+feature, not a per-band value, and the third generation of these tables never found it because
+none of them look at a vendor model, only at what a GAIA frame is like.
+
+There is a version of the collapse that is more interesting than disabling it — writing the
+threshold pairs equal through `0x2002`, which the same model defines as six `REAL32`s, so that
+the two calibration levels become one. That experiment is a write to a block nobody outside
+Sennheiser has written, and its result is recorded in the personalization chapter or not at all;
+it is not something to predict from a screenshot.
+
+### A third invented table, and the one thing in it worth testing
+
+A third chat-assistant table arrived with the same question, and it is the same object dressed
+up: GATT write and notify characteristics "similar to `43333333-…`", hardware handles `0x002c`
+or `0x003f`, and an eight-byte payload — `01` header, `A0` sub-system target, `12` feature
+identifier for "YourSound", `00` mode selector, then *"verification, null padding / zero-fill"*.
+
+Every tell from the previous two is present. The framing does not exist here — nothing on this
+device starts `01 A0`, and a header that means "the next three bytes are a sub-system, a feature
+and a mode" is a different protocol from `FF 03 <len> <vendor u16> <cmd u16>`. The handle numbers
+are offered as a choice between two values, which is how invented ones look; the real ones are
+discoverable in seconds by anyone with nRF Connect, and no real number is quoted anywhere. And
+"cannot be verified with absolute certainty without live sniffing" is not a caveat, it is the
+permission the paragraph asks for.
+
+One claim in it survives contact with the data, and it is worth keeping for that reason:
+**that a volume-tracking loop inside the headset rewrites what you send.** It is the same
+suspicion, expressed badly, as the one real observation about this block — the threshold pairs
+have been seen to move between readings while the ratios and the mix sat bit-identical, which is
+evidence of exactly such a writer and of nothing else. That is why the collapse experiment is
+done as a no-op write first: if `0x2002` carrying the current values verbatim does not read back
+verbatim, the loop is real, and it was there all along.
+
 ## Wear state, identified by experiment
 
 `steps --script wear` walks a human through seven states, one Enter each, so no frame
