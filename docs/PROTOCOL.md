@@ -1215,27 +1215,38 @@ itself — which moved, and still says what this section says it says.
 someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
 only reason it is named here is that a reader should know the id exists before they find it.
 
-## The gain table may follow the audio mode — unresolved, and it matters
+## The app restores its own curve, and the restart is when it does it
 
-At 11:35, with the audio mode at `usereq`, `eq show` read eight zeros. At 12:55, with the mode
-at `personalized`, it read `−4.0, 0, −1.0, 0, 0, +1.1, 0, +1.0` — **byte for byte the table
-that arrived on `0x1082` at 23:05 the previous night**, which was the table this document
-called "rewritten by nobody" and spent an evening looking for a culprit over.
+The hypothesis offered at 12:55 — that the gain table is stored per audio mode — was tested
+five minutes later and **refuted**: in `usereq` the bank read `−4.0, 0, −1.0, 0, 0, +1.1, 0,
++1.0` and the raw `0x1082` push agreed with the parsed read byte for byte, exactly as it had a
+few minutes earlier in `personalized`. One table, both modes. `print_bank` prints `-` for a
+column that never arrived, so this was not missing data dressed up as zeros either.
 
-Two explanations, and the tool cannot currently tell them apart:
+What the readings do say, in order:
 
-- **The equaliser is stored per audio mode**, one table for the user EQ and another under
-  personalization. That would explain last night's change, the 23:05 moment being exactly when
-  this unit had been put into other modes, and it would make every statement in this document
-  about "the" gain table quietly wrong about which table it meant.
-- **`Session::equaliser()` is reading a table that is not always there.** Gains come from
-  `0x1002` per band and from the `0x1082` push, and if the two disagree or one of them arrives
-  late, the same command can print different things minutes apart, which is the worst possible
-  failure in a program whose entire job is telling you what the device holds.
+```
+11:35  usereq        eight zeros            ← the curve `momentum eq flat` wrote last night
+       ~11:50        the app's "Apply and restart", Hi-Res off
+12:00  usereq        −4.0, 0, −1.0, 0, 0, +1.1, 0, +1.0
+12:55  personalized  −4.0, 0, −1.0, 0, 0, +1.1, 0, +1.0
+```
 
-Toggling the mode and reading the bank at each stop separates them, and until it is done,
-every historical claim in this document about a flat curve should be read as "flat in whatever
-mode the unit happened to be in". That includes the author's.
+A curve this program wrote the previous evening was **gone by the next afternoon, replaced by
+a different one, across an event this program did not cause and did not perform.** Nothing was
+written from this PC in that window: the only thing that happened to the headset was that the
+app restarted it. The obvious reading, and the one consistent with last night's hunt for an
+unauthorised writer, is that **the app keeps its own copy of the curve and pushes it to the
+headset when the headset comes back up** — which is why a curve written from here looks
+permanent right up until the next reboot, and then is not.
+
+That has a consequence for everything in this program that writes: **`eq flat`, `eq gain` and
+`eq set` are not durable against the app.** They hold until something restarts the headset,
+and the phone app is happy to do that for reasons of its own. The write still lands — the
+read-back confirms it — but the device's memory of it is second in priority to the app's
+memory of its own preset, and this tool has no way to change what the app will push next boot.
+Anyone using this as a daily driver should treat `momentum eq show` as the truth for *now* and
+not for *after the next restart*.
 
 ## The firmware states its own feature list
 
