@@ -788,9 +788,14 @@ that these bytes were being guessed at.
 
 The handset in that middle row is a Mi 11, whose app offers a Lossless 16-bit/44.1 kHz
 priority that it then does not use: the Codec tab says aptX Adaptive, so the switch is a
-preference the phone cannot exercise. **aptX Lossless is a mode of aptX Adaptive rather than a
-separate codec, so this channel could not have distinguished them anyway** — `[08]` is the
-same byte either way, and the phone's own screen is the only authority in reach. And `0x089a` is the rate of the **stream**, which is narrower than what
+preference the phone cannot exercise. **A Bluetooth stack update on that handset on 2026-11-01
+changed nothing observable** — read before and after, in the same conditions, the four numbers
+were identical: `0x0800 [08]`, `0x081a` 48000, four paired hosts, two connections. So the
+ceiling is the phone's supported codecs and not its firmware, and the only routes left to a
+higher-bitrate radio path are a different handset or a different transmitter. **aptX Lossless
+is a mode of aptX Adaptive rather than a separate codec, so this channel could not have
+distinguished them anyway** — `[08]` is the same byte either way, and the phone's own screen is
+the only authority in reach. And `0x089a` is the rate of the **stream**, which is narrower than what
 this section claimed when it was written. The same track played from the PC at 24-bit
 44.1, 88.2 and 96 kHz left both frames unmoved at `02` / `44100` every time. The number
 is set by codec negotiation, not by the file, and whether the resampling happens in
