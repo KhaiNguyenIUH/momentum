@@ -1190,8 +1190,16 @@ produce — and the three pairs shifted by three equal amounts while the ratios 
 the gains and preset indices at `0x2107` did not change by one bit. That is consistent with a
 fixed shape being slid up and down rather than a new audiogram being written, but the shape's
 meaning — three bands, two ears, threshold and comfort, something else — is not in the bytes.
-One toggle away would say whether the shift happens on every entry to the mode or happened
-once, and that test has not been run.
+
+The toggle test was run, and it came back **negative in both directions**: leaving
+personalized for the user EQ left `0x2103` bit-identical, and entering personalized again left
+it bit-identical a second time. Neither `0x2001` nor the thresholds move on a mode change, in
+either direction, which also settles that `0x2001` is not tracking the audio mode at all — it
+reads `[02]` in both modes and has never read anything else. Whatever shifted those three
+pairs between 11:35 and 12:29 was not the mode, and the remaining candidates are the restart
+the Hi-Res change forced, the app's personalization screen being opened, and the listening
+level, since a fixed shape translated by a level-dependent amount is exactly what the data
+looks like. The last of those is one reading either side of a volume change.
 
 `0x1001`, the Gen1 per-band gain read, answers `0x1181 [05]` on this unit, incidentally:
 not supported, which is why the equaliser is read through `0x1000` and its pushes.
