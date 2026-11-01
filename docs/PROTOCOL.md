@@ -760,7 +760,23 @@ understood. Codec, quality setting, or link state; the bytes do not say, and thi
 document has been wrong before by picking an answer.
 
 What it means now, from Sennheiser's own enumeration: `02` is aptX, `08` aptX Adaptive,
-`ff` no codec. And `0x089a` is the rate of the **stream**, which is narrower than what
+`ff` no codec. **`08` is now confirmed against the vendor's own UI**: the phone app has a
+Codec tab which stated *aptX Adaptive* at the moment this channel read `0x0800 [08]` and
+`0x089a` 48000 Hz, streaming from that handset. The PC, on the inbox Windows driver, reads
+`[02]` at 44100 in the same frame.
+
+| source or setting | `0x0800` | `0x089a` | named by |
+|---|---|---|---|
+| PC, Qobuz, inbox Windows driver | `02` | 44100 | Sennheiser's enumeration |
+| Phone, Hi-Res off | `08` | 48000 | **the app's Codec tab, which said aptX Adaptive** |
+| Phone, Hi-Res on | `0b` | 96000 | nothing yet — the app's Codec tab would name it, and that is the reading worth a restart for |
+| after a restart, nothing playing | `ff` | 0 | `ff` is no stream, not a codec |
+
+The handset in that middle row is a Mi 11, whose app offers a Lossless 16-bit/44.1 kHz
+priority that it then does not use: the Codec tab says aptX Adaptive, so the switch is a
+preference the phone cannot exercise. **aptX Lossless is a mode of aptX Adaptive rather than a
+separate codec, so this channel could not have distinguished them anyway** — `[08]` is the
+same byte either way, and the phone's own screen is the only authority in reach. And `0x089a` is the rate of the **stream**, which is narrower than what
 this section claimed when it was written. The same track played from the PC at 24-bit
 44.1, 88.2 and 96 kHz left both frames unmoved at `02` / `44100` every time. The number
 is set by codec negotiation, not by the file, and whether the resampling happens in
