@@ -1168,8 +1168,33 @@ personalization is not supported**: Hi-Res went off and `0x2001` stayed at `2`, 
 unchanged. Whatever keeps it in standby, it is not the codec. The likelier reading is duller
 and better: `standby` describes personalization itself — a stored, ready profile that is not
 the selected audio mode, which is exactly the state it should be in while `0x0804` says
-`usereq`. That predicts `0x2001 [03]` the moment the audio mode becomes `personalized`, which
-is one command to test and has not been tested yet.
+`usereq`.** That prediction was tested and it failed**: with the app putting the audio mode to
+`personalized` — `0x0804` reading `[00, 03]`, confirmed twice, twelve seconds apart — `0x2001`
+stayed at `[02]`. So `standby` is what this unit does in the mode the app calls personalized,
+and the M4 enum's `3 = enabled` is either a state the M5 never enters, or a state that belongs
+to something other than the mode selector. Only `[02]` has ever been seen on this hardware, so
+the honest entry is that the byte exists, answers, and is not understood.
+
+What *did* move when personalized came on was the thresholds, and they moved in a way that
+looks structured rather than measured:
+
+```
+11:35   −71.77, −56.77 │ −79.71, −64.71 │ −85.25, −70.25
+12:29   −77.90, −62.90 │ −80.61, −65.61 │ −88.12, −73.12
+shift     −6.13  −6.13 │   −0.90  −0.90 │   −2.87  −2.87
+```
+
+Six floats that are really **three pairs, each second member exactly 15.00 dB above the
+first**, in both readings — a regularity no set of independent hearing measurements would
+produce — and the three pairs shifted by three equal amounts while the ratios at `0x2105` and
+the gains and preset indices at `0x2107` did not change by one bit. That is consistent with a
+fixed shape being slid up and down rather than a new audiogram being written, but the shape's
+meaning — three bands, two ears, threshold and comfort, something else — is not in the bytes.
+One toggle away would say whether the shift happens on every entry to the mode or happened
+once, and that test has not been run.
+
+`0x1001`, the Gen1 per-band gain read, answers `0x1181 [05]` on this unit, incidentally:
+not supported, which is why the equaliser is read through `0x1000` and its pushes.
 
 And the codec column of that table was never about the toggle. `0b` at 96000 was the headset
 taking audio **over USB-C from this PC**, discovered hours later when the phone app's Codec tab
