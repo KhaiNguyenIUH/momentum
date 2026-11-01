@@ -1124,6 +1124,42 @@ it is testable in one minute by anyone who wants it: turn Hi-Res off, read `0x20
 someone's hearing test. It is not in this program, is not in `probe`'s allow-list, and the
 only reason it is named here is that a reader should know the id exists before they find it.
 
+## The firmware states its own feature list
+
+`Core_GetSupportedFeatures` is answered **per vendor namespace**: the same command id sent to
+`0x0495` and to the Qualcomm core `0x001d` returns two different lists, and this unit answers
+both. `momentum features` asks and decodes. (live)
+
+```
+vendor 0x0495  0x0101 [00, 09 01, 08 06, 1b 01, 03 02, 10 02, 04 04, 02 01,
+                             0a 04, 14 01, 0b 02, 0c 02, 0d 02, 00 05]
+               features 00 02 03 04 08 09 0a 0b 0c 0d 10 14 1b
+
+vendor 0x001d  0x0101 [00, 0d 01, 0c 01, 06 02, 04 02, 07 01, 00 05]
+               core features 00 04 06 07 0c 0d
+
+vendor 0x001d  0x0100 [03, 01]     Core_GetVersion: protocol 3, transport 1
+```
+
+That last line is the document's assumption about itself, confirmed by the device: **GAIA
+version 3 over RFCOMM**, stated rather than inferred from a service UUID.
+
+Two things the list settles and one it opens.
+
+It explains every registration refusal above: features `0x1c` to `0x2f` are not in it, which
+is why they answered GAIA code `05`. It gives a target for the features this program does not
+yet use — `02`, `03`, `09`, `0a`, `0b`, `0c`, `0d` — seven namespaces the firmware admits to
+and nothing here has opened. And it opens this: **`0x1a`, active noise control, and `0x20`,
+sound personalization, are both absent from the declared list and both work.** `0x1a01`
+returns the ANC mode table and `0x2001` returns the personalization mode; neither is declared.
+
+So the list is a discovery contract, not a capability map — it tells you what a client is
+expected to enumerate, and Sennheiser keeps at least two of its headline features off that
+path. A program that trusted the list would conclude this headset has no noise control, which
+is the kind of wrong conclusion that only comes from reading a manifest instead of sending a
+command. The pairing order, `(feature, version)`, is Qualcomm's documented shape; the raw
+bytes are printed by `momentum features` precisely so that reading can be checked by eye.
+
 ### There is no parametric equaliser on this unit
 
 The theory was worth testing and is now dead, so the four things that killed it are worth

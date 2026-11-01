@@ -102,6 +102,13 @@ pub mod feature {
 /// MOMENTUM 5, and the battery/charging pushes follow it unprompted)
 pub const REGISTER_FEATURE: u16 = 0x0007;
 
+/// `Core_GetSupportedFeatures`: the firmware's own list of what it implements, answered
+/// **per vendor namespace** — the same command sent to `0x0495` and to the core `0x001d`
+/// returns two different lists. The reply is a `moreData` byte followed by
+/// `(feature, version)` pairs. (live on MOMENTUM 5, both namespaces answer; see
+/// `momentum features`)
+pub const GET_SUPPORTED_FEATURES: u16 = 0x0001;
+
 /// Query charging / in-case state. (live on MOMENTUM 5, seen as the `0x0682
 /// [01]` push that follows registration)
 pub const GET_CHARGING: u16 = 0x0602;

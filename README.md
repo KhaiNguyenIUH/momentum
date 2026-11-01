@@ -85,6 +85,7 @@ answers.
 | `mute [on\|off]` | Mute that endpoint; the level survives it |
 | `watch [--seconds N] [--raw]` | Live state pushes, decoded or raw |
 | `watch --changes [--seconds N]` | Poll the equaliser tables and print only what moves, with the time it moved — this is for catching the Sennheiser app editing your curve, which it does unasked and without telling anyone |
+| `features` | Ask the firmware what it implements, in both vendor namespaces, with each feature annotated by what this program has seen it do |
 | `audio [--seconds N]` | The sample rate the headset is decoding and the codec in use, straight from the headset |
 | `probe [--cmd 1A05 --payload 01 --vendor 495]` | Send queries, print answers; the reverse-engineering tool |
 | `steps [--script wear\|buttons] [--out file]` | Listener you drive by hand: it names the state to put the headphones in, waits for Enter, and attributes every frame to that step |

@@ -217,6 +217,18 @@ enum Command {
         #[arg(long)]
         raw: bool,
     },
+    /// Ask the firmware which features it implements, in both vendor namespaces, and print
+    /// each one beside what this program has actually seen that feature do.
+    ///
+    /// This is the question you would answer by taking the app apart, asked of the device
+    /// instead: the firmware returns its own feature list with versions. The raw bytes are
+    /// printed too, because the `(feature, version)` pairing is read off Qualcomm's
+    /// documented shape and deserves to be re-checked by eye.
+    Features {
+        /// Select by service name or peer address; empty means any.
+        #[arg(long, default_value = "")]
+        filter: String,
+    },
     /// Turn active noise control on or off.
     Anc {
         /// on | off
@@ -517,6 +529,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
             watch(*seconds, filter, *raw)
         }),
         Command::Audio { seconds, filter } => Some(audio(*seconds, filter)),
+        Command::Features { filter } => Some(features(filter)),
         Command::Anc { state, filter } => Some(anc(state, filter)),
         Command::Transparency { level, filter } => Some(transparency(*level, filter)),
         Command::Bass { state, filter } => Some(bass(state, filter)),
@@ -1368,6 +1381,67 @@ fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
             return Ok(());
         }
         std::thread::sleep(Duration::from_secs(every));
+    }
+}
+
+/// Ask each namespace on the headset what it implements, and print the answer next to what
+/// this program has seen those features actually do.
+///
+/// This exists because it is a better answer than taking an APK apart: the firmware states
+/// its own feature list, so "does this product have the thing" is answered by the product
+/// rather than by a version of an app that may not ship its model. Both raw payloads are
+/// printed, because the `(feature, version)` pairing is read off Qualcomm's documented
+/// shape — and one pair of bytes misread in either direction would quietly rename every
+/// feature below.
+#[cfg(windows)]
+fn features(filter: &str) -> Result<(), Boxed> {
+    let mut session = open_session(filter)?;
+    for (vendor, label) in [
+        (momentum::proto::frame::VENDOR_QUALCOMM, "vendor 0x0495"),
+        (0x001d, "vendor 0x001d, Qualcomm core"),
+    ] {
+        match session.request_vendor(
+            vendor,
+            momentum::cmd::GET_SUPPORTED_FEATURES,
+            Vec::new(),
+            Duration::from_secs(3),
+        ) {
+            Ok(frame) => {
+                println!("{label} declares, raw {:02x?}:", frame.payload);
+                let (more, rest) = frame
+                    .payload
+                    .split_first()
+                    .map_or((false, &[][..]), |(first, rest)| (*first != 0, rest));
+                for pair in rest.chunks_exact(2) {
+                    println!(
+                        "  feature 0x{:02x} version {:>2}   {}",
+                        pair[0],
+                        pair[1],
+                        feature_note(pair[0])
+                    );
+                }
+                if more {
+                    println!("  (more pages: `momentum probe --vendor … --cmd 0002`)");
+                }
+            }
+            Err(err) => println!("{label}: no answer ({err})"),
+        }
+    }
+    for warning in &session.warnings {
+        println!("note: {warning}");
+    }
+    Ok(())
+}
+
+/// What has been seen of a feature from this program, or a plain admission that nothing has.
+fn feature_note(feature: u8) -> &'static str {
+    match feature {
+        0x00 => "identity: firmware `0x0005`, model `0x0006`",
+        0x04 => "unit state: wear detection `0x0401`, physical state `0x0402`, push `0x0482`",
+        0x08 => "audio: codec `0x0800`, audio mode `0x0804` and its push, stream rate `0x089a`",
+        0x10 => "equaliser: `0x1000` to `0x1014`, and the wide store nobody reads",
+        0x14 => "answered only as pushes `0x1491` and `0x1494`, payloads that look monotonic",
+        _ => "not used by anything in this program",
     }
 }
 
