@@ -507,8 +507,14 @@ enum EqAction {
 fn main() -> Result<(), Boxed> {
     let cli = Cli::parse();
     // The RFCOMM commands are blocking OS calls; they never need a runtime.
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(windows)]
     if let Some(result) = run_rfcomm(&cli.command) {
+        return result;
+    }
+    // IOBluetooth has to be driven from the main thread, so the command runs on
+    // a worker while this thread spins the run loop.
+    #[cfg(target_os = "macos")]
+    if let Some(result) = momentum::macos::run_with_main_loop(|| run_rfcomm(&cli.command)) {
         return result;
     }
     // btleplug's Windows backend is WinRT, whose Bluetooth callbacks arrive in

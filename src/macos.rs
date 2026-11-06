@@ -6,15 +6,20 @@
 //! System Settings.
 //!
 //! IOBluetooth delivers its delegate callbacks on the run loop of the thread
-//! that opened the channel, and its objects are not `Send`. So every call into it
-//! happens on one worker thread that spins `CFRunLoopRunInMode` in short slices,
-//! and the public side talks to that thread over channels so
-//! [`Link::read_frame`] can honour a deadline — the same shape as the Windows
-//! transport in `rfcomm.rs`.
+//! that opened the channel, and its objects are not `Send`. Opening an RFCOMM
+//! channel also has to happen on the process main thread: from a spawned thread
+//! `openRFCOMMChannelSync` fails with `kIOReturnError` (0xe00002bc) on every
+//! attempt, while the same calls on the main thread succeed. So the CLI runs its
+//! command on a worker thread inside [`run_with_main_loop`], and the main thread
+//! spins `CFRunLoopRunInMode` in short slices, running the jobs the worker posts
+//! to it. Every call into IOBluetooth happens in such a job, and the public side
+//! talks to it over channels so [`Link::read_frame`] can honour a deadline — the
+//! same shape as the Windows transport in `rfcomm.rs`.
 
 use std::ffi::c_void;
+use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use objc2::rc::Retained;
@@ -47,9 +52,44 @@ fn spin(seconds: f64) {
     }
 }
 
-/// How long one run-loop slice lasts. Bounds how long a queued write waits for
-/// the worker to notice it.
+/// How long one run-loop slice lasts. Bounds how long a queued write or job
+/// waits for the main thread to notice it.
 const SLICE: f64 = 0.01;
+
+type Job = Box<dyn FnOnce() + Send>;
+
+/// Where worker threads post jobs for the main thread; set by
+/// [`run_with_main_loop`].
+static MAIN_JOBS: OnceLock<Sender<Job>> = OnceLock::new();
+
+/// Run `work` on a new thread while the calling thread, which must be the
+/// process main thread, spins its run loop and runs the jobs `work` posts.
+/// Returns what `work` returns.
+pub fn run_with_main_loop<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    let (jobs_tx, jobs) = mpsc::channel::<Job>();
+    let _ = MAIN_JOBS.set(jobs_tx);
+    thread::scope(|scope| {
+        let handle = scope.spawn(work);
+        while !handle.is_finished() {
+            while let Ok(job) = jobs.try_recv() {
+                job();
+            }
+            spin(SLICE);
+        }
+        handle
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
+/// Queue `job` for the main thread.
+fn post(job: impl FnOnce() + Send + 'static) -> Result<()> {
+    MAIN_JOBS
+        .get()
+        .ok_or_else(|| Error::RadioUnavailable("the main-thread run loop is not running".into()))?
+        .send(Box::new(job))
+        .map_err(|_| Error::RadioUnavailable("the main-thread run loop has stopped".into()))
+}
 
 /// How long a device's SDP query may take before the device is given up on.
 const SDP_WAIT: Duration = Duration::from_secs(5);
@@ -129,12 +169,15 @@ pub fn find(uuid: &str, needle: Option<&str>) -> Result<Vec<RfcommTarget>> {
     let bytes = uuid_bytes(uuid)?;
     let uuid = uuid.to_owned();
     let needle = needle.map(str::to_owned);
-    thread::spawn(move || find_on_worker(&bytes, &uuid, needle.as_deref()))
-        .join()
-        .map_err(|_| Error::RadioUnavailable("the IOBluetooth worker thread panicked".into()))?
+    let (done_tx, done) = mpsc::channel();
+    post(move || {
+        let _ = done_tx.send(find_on_main(&bytes, &uuid, needle.as_deref()));
+    })?;
+    done.recv()
+        .map_err(|_| Error::RadioUnavailable("the IOBluetooth job panicked".into()))?
 }
 
-fn find_on_worker(bytes: &[u8; 16], uuid: &str, needle: Option<&str>) -> Result<Vec<RfcommTarget>> {
+fn find_on_main(bytes: &[u8; 16], uuid: &str, needle: Option<&str>) -> Result<Vec<RfcommTarget>> {
     let sdp_uuid =
         unsafe { IOBluetoothSDPUUID::uuidWithBytes_length(bytes.as_ptr().cast(), 16) }
             .ok_or_else(|| Error::ServiceNotFound(format!("\"{uuid}\" is not an SDP UUID")))?;
@@ -224,7 +267,7 @@ impl Delegate {
     }
 }
 
-/// Requests the worker thread handles on our behalf.
+/// Requests the main thread handles on our behalf.
 enum Request {
     /// Write these bytes, then reply with the outcome.
     Write(Vec<u8>, Sender<Result<()>>),
@@ -232,7 +275,7 @@ enum Request {
     Shutdown,
 }
 
-/// Progress from the worker while it brings the channel up.
+/// Progress from the main thread while it brings the channel up.
 enum Stage {
     /// A step the caller can print, so a stall is attributable.
     Progress(String),
@@ -244,7 +287,7 @@ enum Stage {
 pub struct MacRfcomm {
     requests: Sender<Request>,
     incoming: Receiver<Result<Vec<u8>>>,
-    worker: Option<JoinHandle<()>>,
+    finished: Receiver<()>,
     framer: Framer,
     label: String,
     peer: String,
@@ -254,8 +297,8 @@ pub struct MacRfcomm {
 
 /// Connect to `target`.
 ///
-/// The RFCOMM connect and every later read happen on a worker thread, so this
-/// returns only once the channel is really open.
+/// The RFCOMM connect runs on the main thread, which [`run_with_main_loop`] must
+/// be spinning, so this returns only once the channel is really open.
 pub fn connect(target: &RfcommTarget) -> Result<MacRfcomm> {
     let address = peer_address(&target.device_id)
         .ok_or_else(|| Error::Connect(format!("no address in \"{}\"", target.device_id)))?;
@@ -267,10 +310,11 @@ pub fn connect(target: &RfcommTarget) -> Result<MacRfcomm> {
     let (chunk_tx, incoming) = mpsc::channel::<Result<Vec<u8>>>();
     let (stage_tx, stage_rx) = mpsc::channel::<Stage>();
 
-    let worker_address = address.clone();
-    let worker = thread::spawn(move || {
+    let (finished_tx, finished) = mpsc::channel::<()>();
+    let job_address = address.clone();
+    post(move || {
         if let Err(err) = serve(
-            &worker_address,
+            &job_address,
             server_channel,
             request_rx,
             chunk_tx,
@@ -278,7 +322,8 @@ pub fn connect(target: &RfcommTarget) -> Result<MacRfcomm> {
         ) {
             let _ = stage_tx.send(Stage::Done(Err(err)));
         }
-    });
+        let _ = finished_tx.send(());
+    })?;
 
     loop {
         match stage_rx.recv_timeout(Duration::from_secs(20)) {
@@ -291,7 +336,9 @@ pub fn connect(target: &RfcommTarget) -> Result<MacRfcomm> {
                 ));
             }
             Err(RecvTimeoutError::Disconnected) => {
-                return Err(Error::Connect("the Bluetooth worker thread stopped".into()));
+                return Err(Error::Connect(
+                    "the Bluetooth main-thread job stopped".into(),
+                ));
             }
         }
     }
@@ -299,7 +346,7 @@ pub fn connect(target: &RfcommTarget) -> Result<MacRfcomm> {
     Ok(MacRfcomm {
         requests: request_tx,
         incoming,
-        worker: Some(worker),
+        finished,
         framer: Framer::new(),
         label: target.name.clone(),
         peer: format!("{address} channel {server_channel}"),
@@ -308,7 +355,7 @@ pub fn connect(target: &RfcommTarget) -> Result<MacRfcomm> {
     })
 }
 
-/// Open the channel and pump it until shutdown. Runs on the worker thread.
+/// Open the channel and pump it until shutdown. Runs on the main thread.
 fn serve(
     address: &str,
     server_channel: u8,
@@ -322,13 +369,27 @@ fn serve(
             .ok_or_else(|| Error::Connect(format!("{address} is not a known device")))?;
     let delegate = Delegate::new(chunks.clone());
     let mut opened: Option<Retained<IOBluetoothRFCOMMChannel>> = None;
-    let status = unsafe {
-        device.openRFCOMMChannelSync_withChannelID_delegate(
-            Some(&mut opened),
-            server_channel,
-            Some(AsRef::<AnyObject>::as_ref(&*delegate)),
-        )
-    };
+    // A MOMENTUM 5 refuses the first RFCOMM open after the link has been idle
+    // (kIOReturnError) and accepts the next one, on every channel it publishes.
+    // Observed live on macOS; one retry is enough.
+    let mut status = 0;
+    for _ in 0..2 {
+        status = unsafe {
+            device.openRFCOMMChannelSync_withChannelID_delegate(
+                Some(&mut opened),
+                server_channel,
+                Some(AsRef::<AnyObject>::as_ref(&*delegate)),
+            )
+        };
+        if status == 0 && opened.is_some() {
+            break;
+        }
+        let _ = progress.send(Stage::Progress(format!(
+            "open refused ({:#010x}), retrying",
+            status as u32
+        )));
+        spin(1.0);
+    }
     let channel = match opened {
         Some(channel) if status == 0 => channel,
         _ => {
@@ -436,12 +497,10 @@ impl Link for MacRfcomm {
 
 impl Drop for MacRfcomm {
     fn drop(&mut self) {
-        // Unlike the Windows worker this one is joined: a channel left open when
-        // the process exits is a channel the headset keeps reserved.
+        // Unlike the Windows worker this one is waited for: a channel left open
+        // when the process exits is a channel the headset keeps reserved.
         let _ = self.requests.send(Request::Shutdown);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
+        let _ = self.finished.recv();
     }
 }
 
