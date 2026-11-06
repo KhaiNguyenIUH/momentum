@@ -63,6 +63,20 @@ service entry after the *service* ("GAIA"), not after the product, so
 publishes the control service", and every candidate channel is tried until one
 answers.
 
+### macOS
+
+The same CLI builds and runs on macOS, over IOBluetooth instead of WinRT
+(`src/macos.rs`). It needs a Mac with Rust 1.85 or newer and nothing else.
+
+- Pair the headset in System Settings > Bluetooth first. `--filter` matches the
+  device name ("Khai moment") or the address, with or without `:`/`-`.
+- The first run may prompt for Bluetooth access, or fail until you allow your
+  terminal app under System Settings > Privacy & Security > Bluetooth.
+- The headset takes one control connection. If another app holds it, the open
+  fails with an `IOReturn` error; close that app and retry.
+- Windows only, and they print "not supported on macOS": `volume`, `mute`, `host`,
+  `le-bonds`. `scan` and `gatt` use btleplug and are untouched.
+
 ## Commands
 
 | Command | What it does |

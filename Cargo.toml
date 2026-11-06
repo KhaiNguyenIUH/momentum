@@ -36,3 +36,8 @@ windows = { version = "0.62", features = [
 # `windows` crate's Foundation module, even though it is the `windows` crate that
 # returns those types — so naming `AsyncStatus` needs the direct dependency.
 windows-future = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-io-bluetooth = "0.3"

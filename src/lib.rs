@@ -28,8 +28,11 @@
 pub mod error;
 #[cfg(windows)]
 pub mod host;
+#[cfg(windows)]
 pub mod le;
 pub mod link;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod proto;
 #[cfg(windows)]
 pub mod rfcomm;

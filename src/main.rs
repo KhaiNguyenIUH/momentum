@@ -17,6 +17,17 @@ use momentum::proto::cmd;
 use momentum::proto::frame::{Framer, HEADER_LEN};
 use momentum::proto::state::hex;
 
+#[cfg(target_os = "macos")]
+use momentum::macos as transport;
+#[cfg(windows)]
+use momentum::rfcomm as transport;
+
+/// The concrete RFCOMM link of this OS, so session-level commands are written once.
+#[cfg(target_os = "macos")]
+type Rfcomm = momentum::macos::MacRfcomm;
+#[cfg(windows)]
+type Rfcomm = momentum::rfcomm::WindowsRfcomm;
+
 type Boxed = Box<dyn StdError + Send + Sync>;
 
 #[derive(Parser)]
@@ -495,9 +506,9 @@ enum EqAction {
 
 fn main() -> Result<(), Boxed> {
     let cli = Cli::parse();
-    // The RFCOMM commands are blocking WinRT calls; they never need a runtime.
-    #[cfg(windows)]
-    if let Some(result) = run_windows(&cli.command) {
+    // The RFCOMM commands are blocking OS calls; they never need a runtime.
+    #[cfg(any(windows, target_os = "macos"))]
+    if let Some(result) = run_rfcomm(&cli.command) {
         return result;
     }
     // btleplug's Windows backend is WinRT, whose Bluetooth callbacks arrive in
@@ -530,16 +541,17 @@ async fn run(command: Command) -> Result<(), Boxed> {
             gatt(address, &filter, seconds, no_read, notify).await
         }
         // The RFCOMM commands are handled in main before the runtime exists.
-        _ => Err("this command needs the Windows control channel".into()),
+        _ => Err("this command needs the RFCOMM control channel".into()),
     }
 }
 
 /// Run the RFCOMM commands. Returns `None` for the BLE subcommands, which are
 /// async and belong in the runtime.
-#[cfg(windows)]
-fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
+#[cfg(any(windows, target_os = "macos"))]
+fn run_rfcomm(command: &Command) -> Option<Result<(), Boxed>> {
     match command {
         Command::RfScan { filter, uuid } => Some(rf_scan(filter, uuid.as_deref())),
+        #[cfg(windows)]
         Command::LeBonds { filter } => Some(le_bonds(filter)),
         Command::Status { filter } => Some(status(filter)),
         Command::Info { filter } => Some(info(filter)),
@@ -548,6 +560,7 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Ramp1 { filter } => Some(ramp(filter, &RAMP_UP)),
         Command::Ramp2 { filter } => Some(ramp(filter, &RAMP_DOWN)),
         Command::Ramp0 { filter } => Some(ramp(filter, &RAMP_FLAT)),
+        #[cfg(windows)]
         Command::Host { serve, name } => Some(host(*serve, name)),
         Command::Watch {
             seconds,
@@ -568,12 +581,19 @@ fn run_windows(command: &Command) -> Option<Result<(), Boxed>> {
         Command::Personalization { state, filter } => {
             Some(personalization(state.as_deref(), filter))
         }
+        #[cfg(windows)]
         Command::Volume {
             level,
             filter,
             list,
         } => Some(volume(*level, filter, *list)),
+        #[cfg(windows)]
         Command::Mute { state, filter } => Some(mute(state.as_deref(), filter)),
+        #[cfg(target_os = "macos")]
+        Command::LeBonds { .. }
+        | Command::Host { .. }
+        | Command::Volume { .. }
+        | Command::Mute { .. } => Some(Err("not supported on macOS".into())),
         Command::Steps {
             features,
             channel,
@@ -621,16 +641,15 @@ fn le_bonds(filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn rf_scan(filter: &str, uuid: Option<&str>) -> Result<(), Boxed> {
-    use momentum::rfcomm;
     let uuid = uuid.unwrap_or(momentum::GAIA_SERVICE_UUID);
     let needle = if filter.is_empty() {
         None
     } else {
         Some(filter)
     };
-    let targets = rfcomm::find(uuid, needle)?;
+    let targets = transport::find(uuid, needle)?;
     if targets.is_empty() {
         println!("no paired device publishes RFCOMM service {uuid}");
         println!("the headset needs to be paired in Windows and switched on for this to appear");
@@ -639,8 +658,8 @@ fn rf_scan(filter: &str, uuid: Option<&str>) -> Result<(), Boxed> {
         println!(
             "{:<16} {:<18} channel {}  ({})",
             target.name,
-            rfcomm::peer_address(&target.device_id).unwrap_or_default(),
-            rfcomm::channel(&target.device_id)
+            transport::peer_address(&target.device_id).unwrap_or_default(),
+            transport::channel(&target.device_id)
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "?".into()),
             target.device_id,
@@ -653,8 +672,8 @@ fn rf_scan(filter: &str, uuid: Option<&str>) -> Result<(), Boxed> {
 ///
 /// Windows lists one entry per resolved channel, and the headset accepts only
 /// some of them depending on its state, so candidates are tried in turn.
-#[cfg(windows)]
-fn open_session(filter: &str) -> Result<momentum::Session<momentum::rfcomm::WindowsRfcomm>, Boxed> {
+#[cfg(any(windows, target_os = "macos"))]
+fn open_session(filter: &str) -> Result<momentum::Session<Rfcomm>, Boxed> {
     connect_first(filter, true, None)
 }
 
@@ -664,18 +683,18 @@ fn open_session(filter: &str) -> Result<momentum::Session<momentum::rfcomm::Wind
 /// attempt to one RFCOMM server channel: this headset publishes the same service
 /// on two of them, and everything ever measured here went to whichever the OS
 /// happened to list first.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn connect_first(
     filter: &str,
     register: bool,
     only: Option<u32>,
-) -> Result<momentum::Session<momentum::rfcomm::WindowsRfcomm>, Boxed> {
+) -> Result<momentum::Session<Rfcomm>, Boxed> {
     let needle = if filter.is_empty() {
         None
     } else {
         Some(filter)
     };
-    let found = momentum::rfcomm::find(momentum::GAIA_SERVICE_UUID, needle)?;
+    let found = transport::find(momentum::GAIA_SERVICE_UUID, needle)?;
     if found.is_empty() {
         return Err(format!(
             "nothing publishes the control service ({}). Is the headset switched on? \
@@ -688,7 +707,7 @@ fn connect_first(
         None => found,
         Some(want) => found
             .into_iter()
-            .filter(|target| momentum::rfcomm::channel(&target.device_id) == Some(want))
+            .filter(|target| transport::channel(&target.device_id) == Some(want))
             .collect(),
     };
     if targets.is_empty() {
@@ -704,11 +723,11 @@ fn connect_first(
         println!(
             "connecting to {} ({}) on channel {} ...",
             target.name,
-            momentum::rfcomm::peer_address(&target.device_id).unwrap_or_default(),
-            momentum::rfcomm::channel(&target.device_id)
+            transport::peer_address(&target.device_id).unwrap_or_default(),
+            transport::channel(&target.device_id)
                 .map_or_else(|| "?".to_string(), |c| c.to_string()),
         );
-        let link = match momentum::rfcomm::connect(target) {
+        let link = match transport::connect(target) {
             Ok(link) => link,
             Err(err) => {
                 println!("  no channel: {err}");
@@ -731,7 +750,7 @@ fn connect_first(
     })
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn status(filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     session.refresh()?;
@@ -755,7 +774,7 @@ fn status(filter: &str) -> Result<(), Boxed> {
 /// The values it will restore to are printed **before** the hold, not only after: the
 /// only way to abandon a hold is to interrupt the program, and an interrupted restore is
 /// one you have to finish by hand from numbers you can no longer see.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq_set(
     band: u8,
     gain: Option<f32>,
@@ -862,7 +881,7 @@ fn eq_set(
 
 /// Move one band's gain, then read that band back, so the number printed is the number
 /// the headset is storing rather than the one we asked for.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq_gain(band: u8, db: f32, filter: &str) -> Result<(), Boxed> {
     let tenths = (f64::from(db) * 10.0).round();
     if !db.is_finite() || tenths.abs() > 127.0 {
@@ -889,7 +908,7 @@ fn eq_gain(band: u8, db: f32, filter: &str) -> Result<(), Boxed> {
 /// 4000 Hz" would only mean that we asked. Note what the ack does and does not say — the
 /// store took the value; whether the audio path consults it is a matter for your ears,
 /// and the wide gain store is precedent that a writable table can be silent.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq_param(
     band: u8,
     what: String,
@@ -922,7 +941,7 @@ fn eq_param(
 /// Zero every gain, which is the factory curve and the way out of a sound you no longer
 /// want. Only the gains: the filter bank's frequencies, Qs and types are left alone,
 /// because nothing has established that resetting those is harmless.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq_flat(filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let bands = session.equaliser()?.bands();
@@ -938,7 +957,7 @@ fn eq_flat(filter: &str) -> Result<(), Boxed> {
 }
 
 /// One band, in the units the wire carries, which is the only honest way to hold it.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Clone, Copy, PartialEq)]
 struct Band {
     hz: u16,
@@ -952,9 +971,9 @@ struct Band {
 /// A failure stops the pass rather than ploughing on: half a snapshot applied is worse
 /// than none, because the table on screen and the table in the headphone would then
 /// disagree in a way nobody can see.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn apply_bands(
-    session: &mut momentum::Session<momentum::rfcomm::WindowsRfcomm>,
+    session: &mut momentum::Session<Rfcomm>,
     want: &[Band],
     now: &mut [Band],
 ) -> Result<(), Boxed> {
@@ -970,7 +989,7 @@ fn apply_bands(
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn print_bands(bands: &[Band]) {
     println!(
         "{:<5} {:>7}  {:>7}  {:>5}  {:>7}",
@@ -995,7 +1014,7 @@ fn print_bands(bands: &[Band]) {
 /// every band are writable, and whether the audio path consults them is settled by your
 /// ears in ten seconds, not by a frame log. Nothing here pretends to know whether a
 /// write was audible — the tool reports that the store accepted it, nothing more.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq_tune(filter: &str) -> Result<(), Boxed> {
     use std::io::Write;
 
@@ -1188,7 +1207,7 @@ fn mode_text(payload: &[u8]) -> String {
 }
 
 /// Show or change the audio mode, reading it back either way.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn audio_mode(mode: Option<u8>, filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let Some(want) = mode else {
@@ -1227,7 +1246,7 @@ fn audio_mode(mode: Option<u8>, filter: &str) -> Result<(), Boxed> {
 
 /// The equaliser commands: one connection per invocation, and every write prints the
 /// bank as the headset reported it afterwards rather than as the request asked for it.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq(action: &EqAction) -> Result<(), Boxed> {
     match action {
         EqAction::Show { raw, filter } => eq_show(filter, *raw),
@@ -1416,7 +1435,7 @@ fn personal_diff(before: &[(u16, Vec<u8>)], after: &[(u16, Vec<u8>)]) -> Vec<Str
 /// polls are where somebody else gets their turn — and therefore the only place a change
 /// can come from. Collisions are part of that: a poll that finds the slot busy says so once
 /// and tries again, because the thing occupying it is precisely what is being watched for.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
     let every = every.max(2);
     let start = Instant::now();
@@ -1499,7 +1518,7 @@ fn eq_watch(seconds: u64, every: u64, filter: &str) -> Result<(), Boxed> {
 /// printed, because the `(feature, version)` pairing is read off Qualcomm's documented
 /// shape — and one pair of bytes misread in either direction would quietly rename every
 /// feature below.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn features(filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     for (vendor, label, sennheiser) in [
@@ -1586,7 +1605,7 @@ fn feature_note(feature: u8, sennheiser: bool) -> &'static str {
 }
 
 /// The equaliser as the headset reports it, and the tables it cannot explain.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn eq_show(filter: &str, raw: bool) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let eq = session.equaliser()?;
@@ -1643,7 +1662,7 @@ fn eq_show(filter: &str, raw: bool) -> Result<(), Boxed> {
 }
 
 /// Product, firmware and serial, one per line.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn info(filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     // No `refresh()`: these three frames are the whole job, so a script that
@@ -1669,7 +1688,7 @@ fn info(filter: &str) -> Result<(), Boxed> {
 /// Deliberately not Windows' endpoint: the operating system's idea of the format is a
 /// request, while `0x089a` is what the codec agreed to. The two disagree every time
 /// aptX refuses the file's rate, and only one of them describes what was heard.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
     use momentum::cmd::feature;
     use momentum::proto::frame::VENDOR_QUALCOMM;
@@ -1754,7 +1773,7 @@ fn audio(seconds: u64, filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn watch(seconds: u64, filter: &str, raw: bool) -> Result<(), Boxed> {
     if raw {
         // Passive: nothing is written, so whatever arrives is the headset
@@ -1798,7 +1817,7 @@ fn watch(seconds: u64, filter: &str, raw: bool) -> Result<(), Boxed> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn switch(text: &str) -> Result<bool, Boxed> {
     match text.to_lowercase().as_str() {
         "on" | "1" | "true" | "yes" => Ok(true),
@@ -1869,12 +1888,12 @@ fn volume(level: Option<u8>, filter: &str, list: bool) -> Result<(), Boxed> {
 
 /// Sennheiser's Bluetooth SIG company id — Windows also reports it as this
 /// device's `ManufacturerId` (29).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const SENNHEISER_VENDOR: u16 = 0x001D;
 
 /// Parse a hex byte spec: `01-0f`, `01,03,08`, or a single `08`. The sweep takes
 /// one because walking a span id by id is tedious enough that nobody would.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn byte_spec(text: &str) -> Result<Vec<u8>, Boxed> {
     let mut out = Vec::new();
     for part in text
@@ -1905,7 +1924,7 @@ fn byte_spec(text: &str) -> Result<Vec<u8>, Boxed> {
 /// condition at any frame is never in doubt. Wording matters here — each line says
 /// what to touch, in which order, and for how long, because an unlabelled frame is
 /// worth nothing.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const SCRIPTS: &[(&str, &[&str])] = &[
     (
         "wear",
@@ -1941,7 +1960,7 @@ const SCRIPTS: &[(&str, &[&str])] = &[
 /// Deliberately synchronous. Listening in the background and hoping the physical
 /// action lands inside the window is fragile in exactly the way this is not: the
 /// human decides when a step begins and ends, and the transcript says so.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn steps(
     features: &str,
     filter: &str,
@@ -2089,7 +2108,7 @@ fn steps(
 /// Only the sample rate is known this well: its four bytes, big-endian, were 48000
 /// while a phone streamed and 44100 at rest, and no other frame in this project has
 /// been pinned down that cleanly. Everything else prints as bytes, on purpose.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn note(cmd: u16, payload: &[u8]) -> String {
     if cmd != momentum::cmd::PUSH_SAMPLE_RATE {
         return String::new();
@@ -2129,7 +2148,7 @@ fn host(serve: bool, name: &str) -> Result<(), Boxed> {
 /// Everything one `probe` run may be asked to do. It arrived as eight positional
 /// arguments, which is how a tool ends up sending the wrong payload to the wrong id;
 /// the caller now has to name what it means.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Clone, Copy)]
 struct ProbeRequest<'a> {
     seconds: u64,
@@ -2176,7 +2195,7 @@ fn probe_refuses_the_four_commands_that_cannot_be_undone() {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn probe(request: &ProbeRequest<'_>) -> Result<(), Boxed> {
     use momentum::cmd::feature;
     use momentum::proto::frame::VENDOR_QUALCOMM;
@@ -2304,7 +2323,7 @@ fn probe(request: &ProbeRequest<'_>) -> Result<(), Boxed> {
 }
 
 /// Build a host-to-headset frame with an explicit vendor id.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn command(vendor: u16, cmd: u16, payload: Vec<u8>) -> momentum::Frame {
     momentum::Frame {
         kind: momentum::FrameKind::Command,
@@ -2314,7 +2333,7 @@ fn command(vendor: u16, cmd: u16, payload: Vec<u8>) -> momentum::Frame {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn parse_u16(text: &str) -> Result<u16, Boxed> {
     u16::from_str_radix(text.trim().trim_start_matches("0x"), 16)
         .map_err(|e| format!("\"{text}\" is not a hex number: {e}").into())
@@ -2324,7 +2343,7 @@ fn parse_u16(text: &str) -> Result<u16, Boxed> {
 /// what makes a refusal pattern visible — one id tells you about a command, a block
 /// of them tells you whether the firmware is refusing the *id* or the *payload*, and
 /// those two have been telling very different stories all week.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn parse_u16_spec(text: &str) -> Result<Vec<u16>, Boxed> {
     let mut out = Vec::new();
     for part in text
@@ -2349,7 +2368,7 @@ fn parse_u16_spec(text: &str) -> Result<Vec<u16>, Boxed> {
 }
 
 /// Parse "01 f2" or "01,f2" into bytes; empty text means no payload.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn hex_bytes(text: &str) -> Result<Vec<u8>, Boxed> {
     text.split([',', ' '])
         .filter(|part| !part.is_empty())
@@ -2360,7 +2379,7 @@ fn hex_bytes(text: &str) -> Result<Vec<u8>, Boxed> {
         .collect()
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn anc(state: &str, filter: &str) -> Result<(), Boxed> {
     let wanted = switch(state)?;
     let mut session = open_session(filter)?;
@@ -2369,7 +2388,7 @@ fn anc(state: &str, filter: &str) -> Result<(), Boxed> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn transparency(level: u8, filter: &str) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let event = session.set_transparency(level)?;
@@ -2380,19 +2399,19 @@ fn transparency(level: u8, filter: &str) -> Result<(), Boxed> {
 /// The tilt written by `ramp1`, in raw units — ten per decibel. Deliberately no
 /// band left at zero, so switching profiles reverses the whole curve rather than
 /// moving one slider.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const RAMP_UP: [i16; 8] = [-60, -50, -30, -10, 10, 30, 50, 60];
 /// `ramp1` seen in a mirror.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const RAMP_DOWN: [i16; 8] = [60, 50, 30, 10, -10, -30, -50, -60];
 /// Zeros, to undo either.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 const RAMP_FLAT: [i16; 8] = [0; 8];
 
 /// Write a tilt into the writable store and report per band whether the device
 /// kept it. Temporary instrument, kept because it is the only way this device's
 /// most mysterious table can be tested by ear.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn ramp(filter: &str, wanted: &[i16; 8]) -> Result<(), Boxed> {
     let mut session = open_session(filter)?;
     let eq = session.set_eq_gains_wide(wanted)?;
@@ -2424,7 +2443,7 @@ fn ramp(filter: &str, wanted: &[i16; 8]) -> Result<(), Boxed> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn bass(state: &str, filter: &str) -> Result<(), Boxed> {
     let wanted = switch(state)?;
     let mut session = open_session(filter)?;
@@ -2539,7 +2558,7 @@ fn personalization_accepts_on_off_and_nothing_only() {
 /// Read the hearing profile, or switch it. See the command's own help for what is guessed and
 /// what is known: the shapes are the vendor's, the values are this device's, and the meaning
 /// of a threshold is neither.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn personalization(state: Option<&str>, filter: &str) -> Result<(), Boxed> {
     use momentum::cmd;
     let wanted = personal_switch(state).map_err(|err| -> Boxed { err.into() })?;
